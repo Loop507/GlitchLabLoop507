@@ -24,7 +24,7 @@ def glitch_vhs(img):
     r = np.roll(r, 2, axis=1)
     b = np.roll(b, -2, axis=1)
     arr = np.stack([r, g, b], axis=2)
-    return Image.fromarray(arr)
+    return Image.fromarray(arr.astype(np.uint8))
 
 # Effetto glitch distruttivo
 def glitch_distruttivo(img):
@@ -42,7 +42,7 @@ def glitch_distruttivo(img):
         x_new = np.clip(x + dx, 0, w - w_block)
         y_new = np.clip(y + dy, 0, h - h_block)
         arr[y_new:y_new+h_block, x_new:x_new+w_block] = block
-    return Image.fromarray(arr)
+    return Image.fromarray(arr.astype(np.uint8))
 
 # Glitch casuale tra i due
 def glitch_random(img):
@@ -55,9 +55,9 @@ def convert_img(img):
     return buf.getvalue()
 
 # Se immagine caricata
-if uploaded_file:
+if uploaded_file is not None:
     img = Image.open(uploaded_file).convert("RGB")
-    st.image(img, caption="🖼️ Originale", use_column_width=True)
+    st.image(img, caption="🖼️ Originale", use_container_width=True)
 
     with st.spinner("🎨 Generazione glitch in corso..."):
         vhs = glitch_vhs(img)
@@ -69,13 +69,13 @@ if uploaded_file:
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.image(vhs, caption="VHS", use_column_width=True)
+        st.image(vhs, caption="VHS", use_container_width=True)
         st.download_button("⬇️ Scarica VHS", convert_img(vhs), "vhs_glitch.png", "image/png")
 
     with col2:
-        st.image(distr, caption="Distruttivo", use_column_width=True)
+        st.image(distr, caption="Distruttivo", use_container_width=True)
         st.download_button("⬇️ Scarica Distruttivo", convert_img(distr), "distruttivo_glitch.png", "image/png")
 
     with col3:
-        st.image(rand, caption="Random", use_column_width=True)
+        st.image(rand, caption="Random", use_container_width=True)
         st.download_button("⬇️ Scarica Random", convert_img(rand), "random_glitch.png", "image/png")
