@@ -20,28 +20,42 @@ def glitch_vhs(img):
         arr = np.array(img)
         h, w, _ = arr.shape
         
+        # Parametri casuali per ogni generazione
+        freq1 = random.uniform(3, 12)  # Frequenza sinusoidale casuale
+        freq2 = random.uniform(1, 6)   # Seconda frequenza
+        intensity = random.randint(15, 45)  # Intensità distorsione
+        
         # Scanlines più intense e irregolari
-        for y in range(0, h, 1):  # Ogni riga invece di ogni 2
-            # Distorsione sinusoidale più forte
-            shift = int(30 * np.sin(y / 8) + 15 * np.sin(y / 3))
+        for y in range(0, h, 1):
+            # Distorsione sinusoidale con parametri casuali
+            shift = int(intensity * np.sin(y / freq1) + (intensity//2) * np.sin(y / freq2))
             if shift != 0:
                 arr[y:y+1, :, :] = np.roll(arr[y:y+1, :, :], shift, axis=1)
             
-            # Aggiungi rumore su alcune righe
-            if y % 3 == 0:
-                noise = np.random.randint(-20, 20, (1, w, 3))
+            # Aggiungi rumore su alcune righe (casualità)
+            if random.random() < 0.3:  # 30% chance invece di ogni 3
+                noise_intensity = random.randint(10, 30)
+                noise = np.random.randint(-noise_intensity, noise_intensity, (1, w, 3))
                 arr[y:y+1, :, :] = np.clip(arr[y:y+1, :, :] + noise, 0, 255)
         
-        # Separazione canali colore più estrema
+        # Separazione canali colore con spostamenti casuali
         r, g, b = arr[:,:,0], arr[:,:,1], arr[:,:,2]
-        r = np.roll(r, 25, axis=1)  # Spostamento maggiore
-        b = np.roll(b, -25, axis=1)
-        g = np.roll(g, 5, axis=0)   # Spostamento verticale del verde
+        r_shift = random.randint(15, 35)
+        b_shift = random.randint(-35, -15)
+        g_shift = random.randint(-10, 10)
         
-        # Saturazione colori per effetto VHS
-        r = np.clip(r * 1.2, 0, 255)
-        g = np.clip(g * 0.8, 0, 255)
-        b = np.clip(b * 1.1, 0, 255)
+        r = np.roll(r, r_shift, axis=1)
+        b = np.roll(b, b_shift, axis=1)
+        g = np.roll(g, g_shift, axis=0)
+        
+        # Saturazione colori casuale
+        r_sat = random.uniform(1.0, 1.4)
+        g_sat = random.uniform(0.6, 1.0)
+        b_sat = random.uniform(0.9, 1.3)
+        
+        r = np.clip(r * r_sat, 0, 255)
+        g = np.clip(g * g_sat, 0, 255)
+        b = np.clip(b * b_sat, 0, 255)
         
         arr = np.stack([r, g, b], axis=2)
         
@@ -112,43 +126,102 @@ def glitch_noise(img):
         arr = np.array(img).astype(np.int16)
         h, w, _ = arr.shape
         
-        st.info("Debug: Applicando effetto noise")
+        st.info("Debug: Applicando effetto noise casuale")
         
-        # Rumore più intenso e variabile
-        noise_intensity = random.randint(30, 80)
-        noise = np.random.randint(-noise_intensity, noise_intensity, arr.shape)
+        # Parametri casuali per ogni generazione
+        noise_type = random.choice(['bands', 'pixels', 'waves', 'mixed'])
         
-        # Aggiungi rumore a bande
-        for i in range(0, h, random.randint(10, 50)):
-            end_i = min(i + random.randint(5, 20), h)
-            band_noise = np.random.randint(-100, 100, (end_i - i, w, 3))
-            arr[i:end_i] += band_noise
+        if noise_type == 'bands':
+            # Rumore a bande casuali
+            num_bands = random.randint(5, 20)
+            for _ in range(num_bands):
+                start_y = random.randint(0, h-1)
+                band_height = random.randint(3, 30)
+                end_y = min(start_y + band_height, h)
+                
+                intensity = random.randint(40, 120)
+                band_noise = np.random.randint(-intensity, intensity, (end_y - start_y, w, 3))
+                arr[start_y:end_y] += band_noise
         
-        # Aggiungi rumore generale
-        arr += noise
+        elif noise_type == 'pixels':
+            # Rumore pixel casuali
+            num_pixels = random.randint(w*h//20, w*h//5)
+            for _ in range(num_pixels):
+                x = random.randint(0, w-1)
+                y = random.randint(0, h-1)
+                pixel_noise = np.random.randint(-100, 100, 3)
+                arr[y, x] += pixel_noise
+        
+        elif noise_type == 'waves':
+            # Rumore ondulatorio
+            for y in range(h):
+                wave_intensity = random.randint(20, 80)
+                wave_freq = random.uniform(0.1, 0.5)
+                wave_shift = int(wave_intensity * np.sin(y * wave_freq))
+                
+                if wave_shift != 0:
+                    # Applica rumore sulla riga
+                    row_noise = np.random.randint(-30, 30, (1, w, 3))
+                    arr[y:y+1] += row_noise
+                    # Shifta la riga
+                    arr[y:y+1] = np.roll(arr[y:y+1], wave_shift, axis=1)
+        
+        else:  # mixed
+            # Combina tutti gli effetti
+            # Rumore generale
+            general_noise = np.random.randint(-40, 40, arr.shape)
+            arr += general_noise
+            
+            # Alcune bande
+            for _ in range(random.randint(3, 8)):
+                start_y = random.randint(0, h-10)
+                end_y = start_y + random.randint(2, 15)
+                intensity = random.randint(50, 100)
+                band_noise = np.random.randint(-intensity, intensity, (end_y - start_y, w, 3))
+                arr[start_y:end_y] += band_noise
         
         # Saturazione casuale dei canali
-        if random.random() < 0.5:
-            arr[:,:,0] = np.clip(arr[:,:,0] * 1.3, 0, 255)  # Rosso
-        if random.random() < 0.5:
-            arr[:,:,1] = np.clip(arr[:,:,1] * 0.7, 0, 255)  # Verde
-        if random.random() < 0.5:
-            arr[:,:,2] = np.clip(arr[:,:,2] * 1.2, 0, 255)  # Blu
+        channel_effects = random.sample([0, 1, 2], random.randint(1, 3))
+        for channel in channel_effects:
+            multiplier = random.uniform(0.3, 2.0)
+            arr[:,:,channel] = np.clip(arr[:,:,channel] * multiplier, 0, 255)
         
         # Clip finale
         arr = np.clip(arr, 0, 255).astype(np.uint8)
         
-        st.success("Effetto noise completato!")
+        st.success(f"Effetto noise '{noise_type}' completato!")
         return Image.fromarray(arr)
     except Exception as e:
         st.error(f"Errore nell'effetto noise: {str(e)}")
         return img
 
 def glitch_random(img):
-    """Applica un effetto glitch casuale"""
+    """Applica un effetto glitch completamente casuale"""
     try:
+        # Scelta casuale più bilanciata
         effects = [glitch_vhs, glitch_distruttivo, glitch_noise]
-        return random.choice(effects)(img)
+        
+        # Possibilità di combinare due effetti
+        if random.random() < 0.3:  # 30% chance di combo
+            st.info("🎲 Generando combo di effetti!")
+            effect1 = random.choice(effects)
+            effect2 = random.choice(effects)
+            
+            # Applica primo effetto
+            temp_img = effect1(img)
+            # Applica secondo effetto con intensità ridotta
+            if effect2 == glitch_noise:
+                # Per il noise, riduci l'intensità nella combo
+                return effect2(temp_img)
+            else:
+                return effect2(temp_img)
+        else:
+            # Singolo effetto casuale
+            chosen_effect = random.choice(effects)
+            effect_name = chosen_effect.__name__.replace('glitch_', '')
+            st.info(f"🎲 Effetto casuale scelto: {effect_name}")
+            return chosen_effect(img)
+            
     except Exception as e:
         st.error(f"Errore nell'effetto random: {str(e)}")
         return img
@@ -185,6 +258,10 @@ if uploaded_file is not None:
             
             st.write("🔄 Generando effetto Random...")
             rand = glitch_random(img)
+            
+        # Pulsante per rigenerare con nuova casualità
+        if st.button("🎲 Rigenera tutti gli effetti con nuova casualità"):
+            st.rerun()
         
         # Mostra i risultati
         st.subheader("🌀 Risultati glitch")
