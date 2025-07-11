@@ -14,13 +14,12 @@ def glitch_vhs(img):
     img = img.convert("RGB")
     arr = np.array(img)
     h, w, _ = arr.shape
-    for y in range(0, h, 4):
-        shift = int(10 * np.sin(y / 3))  # aumento spostamento per effetto più evidente
+    for y in range(0, h, 2):
+        shift = int(15 * np.sin(y / 4))
         arr[y:y+1, :, :] = np.roll(arr[y:y+1, :, :], shift, axis=1)
-    # Sposta i canali rosso e blu di più per evidenziare effetto cromatico
     r, g, b = arr[:,:,0], arr[:,:,1], arr[:,:,2]
-    r = np.roll(r, 5, axis=1)
-    b = np.roll(b, -5, axis=1)
+    r = np.roll(r, 10, axis=1)
+    b = np.roll(b, -10, axis=1)
     arr = np.stack([r, g, b], axis=2)
     return Image.fromarray(arr.astype(np.uint8))
 
@@ -28,21 +27,28 @@ def glitch_distruttivo(img):
     img = img.convert("RGB")
     arr = np.array(img)
     h, w, _ = arr.shape
-    for _ in range(50):  # aumento numero blocchi
-        x = random.randint(0, w - 30)
-        y = random.randint(0, h - 30)
-        w_block = random.randint(10, 40)  # blocchi più grandi
-        h_block = random.randint(10, 40)
-        dx = random.randint(-20, 20)  # spostamenti maggiori
-        dy = random.randint(-20, 20)
+    for _ in range(60):
+        x = random.randint(0, w - 50)
+        y = random.randint(0, h - 50)
+        w_block = random.randint(20, 60)
+        h_block = random.randint(20, 60)
+        dx = random.randint(-30, 30)
+        dy = random.randint(-30, 30)
         block = arr[y:y+h_block, x:x+w_block].copy()
         x_new = np.clip(x + dx, 0, w - w_block)
         y_new = np.clip(y + dy, 0, h - h_block)
         arr[y_new:y_new+h_block, x_new:x_new+w_block] = block
     return Image.fromarray(arr.astype(np.uint8))
 
+def glitch_noise(img):
+    img = img.convert("RGB")
+    arr = np.array(img).astype(np.int16)
+    noise = np.random.randint(-50, 50, arr.shape)
+    arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
+    return Image.fromarray(arr)
+
 def glitch_random(img):
-    return random.choice([glitch_vhs, glitch_distruttivo])(img)
+    return random.choice([glitch_vhs, glitch_distruttivo, glitch_noise])(img)
 
 def convert_img(img):
     buf = io.BytesIO()
