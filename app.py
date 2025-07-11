@@ -1,54 +1,10 @@
 import streamlit as st
-from PIL import Image
-import numpy as np
+from PIL import Image, ImageOps
 import io
-import random
 
-st.set_page_config(page_title="GlitchLabLoop507", layout="centered")
-st.title("🎛️ GlitchLabLoop507")
-st.write("Carica una foto e genera 3 versioni glitchate: VHS, Distruttivo e Random!")
+st.title("Test Glitch - Inverti colori")
 
-uploaded_file = st.file_uploader("📷 Carica un'immagine", type=["jpg", "jpeg", "png"])
-
-def glitch_vhs(img):
-    img = img.convert("RGB")
-    arr = np.array(img)
-    h, w, _ = arr.shape
-    for y in range(0, h, 2):
-        shift = int(15 * np.sin(y / 4))
-        arr[y:y+1, :, :] = np.roll(arr[y:y+1, :, :], shift, axis=1)
-    r, g, b = arr[:,:,0], arr[:,:,1], arr[:,:,2]
-    r = np.roll(r, 10, axis=1)
-    b = np.roll(b, -10, axis=1)
-    arr = np.stack([r, g, b], axis=2)
-    return Image.fromarray(arr.astype(np.uint8))
-
-def glitch_distruttivo(img):
-    img = img.convert("RGB")
-    arr = np.array(img)
-    h, w, _ = arr.shape
-    for _ in range(60):
-        x = random.randint(0, w - 50)
-        y = random.randint(0, h - 50)
-        w_block = random.randint(20, 60)
-        h_block = random.randint(20, 60)
-        dx = random.randint(-30, 30)
-        dy = random.randint(-30, 30)
-        block = arr[y:y+h_block, x:x+w_block].copy()
-        x_new = np.clip(x + dx, 0, w - w_block)
-        y_new = np.clip(y + dy, 0, h - h_block)
-        arr[y_new:y_new+h_block, x_new:x_new+w_block] = block
-    return Image.fromarray(arr.astype(np.uint8))
-
-def glitch_noise(img):
-    img = img.convert("RGB")
-    arr = np.array(img).astype(np.int16)
-    noise = np.random.randint(-50, 50, arr.shape)
-    arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
-    return Image.fromarray(arr)
-
-def glitch_random(img):
-    return random.choice([glitch_vhs, glitch_distruttivo, glitch_noise])(img)
+uploaded_file = st.file_uploader("Carica un'immagine", type=["jpg", "jpeg", "png"])
 
 def convert_img(img):
     buf = io.BytesIO()
@@ -57,25 +13,10 @@ def convert_img(img):
 
 if uploaded_file is not None:
     img = Image.open(uploaded_file).convert("RGB")
-    st.image(img, caption="🖼️ Originale", use_container_width=True)
+    st.image(img, caption="Originale", use_container_width=True)
 
-    with st.spinner("🎨 Generazione glitch in corso..."):
-        vhs = glitch_vhs(img)
-        distr = glitch_distruttivo(img)
-        rand = glitch_random(img)
+    # Effetto semplice: inverti colori
+    inverted = ImageOps.invert(img)
+    st.image(inverted, caption="Invertito", use_container_width=True)
 
-    st.subheader("🌀 Risultati glitch")
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.image(vhs, caption="VHS", use_container_width=True)
-        st.download_button("⬇️ Scarica VHS", convert_img(vhs), "vhs_glitch.png", "image/png")
-
-    with col2:
-        st.image(distr, caption="Distruttivo", use_container_width=True)
-        st.download_button("⬇️ Scarica Distruttivo", convert_img(distr), "distruttivo_glitch.png", "image/png")
-
-    with col3:
-        st.image(rand, caption="Random", use_container_width=True)
-        st.download_button("⬇️ Scarica Random", convert_img(rand), "random_glitch.png", "image/png")
+    st.download_button("Scarica invertito", convert_img(inverted), "invertito.png", "image/png")
