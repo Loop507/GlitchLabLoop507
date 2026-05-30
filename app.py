@@ -232,30 +232,102 @@ def img_to_bytes(img: Image.Image) -> bytes:
     return buf.getvalue()
 
 
-def make_report(img_size, params: dict, rand_effect_name: str, ts: str) -> bytes:
-    """Report editoriale stilizzato — formato social Loop507."""
+def _report_header(effect_name: str, engine: str, w: int, h: int, mpx: float, date_str: str, time_str: str) -> list:
+    return [
+        f"GLITCHLAB [LOOP507] // {effect_name} // {w}x{h}px // PNG",
+        f":: MOTORE: {engine} [v2.0]",
+        f":: PROCESSO: Corruzione Singolo Strato — {effect_name}",
+        "",
+        f'"{_quote(effect_name)}"',
+        "",
+        "> TECHNICAL LOG SHEET:",
+        f"* Asset: {w} x {h} px  ({mpx:.2f} Mpx)",
+        f"* Data: {date_str}  //  {time_str}",
+    ]
+
+def _report_footer() -> list:
+    return [
+        "",
+        "> Regia e Algoritmo: Loop507",
+        "",
+        "#glitchart #glitchlab #loop507 #digitaldestruction",
+        "#signalcorruption #experimentalimage #computationalminimalism",
+    ]
+
+def _quote(effect_name: str) -> str:
+    quotes = {
+        "VHS":         "Il nastro ha consumato i colori. La memoria e' distorta.",
+        "DISTRUTTIVO": "I blocchi si sono spostati. La struttura non esiste piu'.",
+        "NOISE":       "Il segnale e' collassato. Il rumore ha preso il controllo.",
+        "RANDOM":      "L'algoritmo ha scelto. Il risultato e' irripetibile.",
+    }
+    return quotes.get(effect_name, "Il pixel e' stato smontato.")
+
+
+def make_report_vhs(img_size, params: dict, ts: str) -> bytes:
     w, h = img_size
     mpx = w * h / 1_000_000
+    date_str, time_str = ts.split(" ")
+    intensity_pct = int((params['vhs_int'] + params['vhs_scan'] + params['vhs_col']) / 6.0 * 100)
 
-    # Calcola valori derivati leggibili
-    vhs_total   = (params['vhs_int'] + params['vhs_scan'] + params['vhs_col']) / 6.0
-    dest_total  = (params['dest_size'] + params['dest_num'] + params['dest_disp']) / 6.0
-    noise_total = (params['noise_int'] + params['noise_cov'] + params['noise_chaos'] * 2) / 6.0
+    lines = _report_header("VHS", "magnetic_tape_engine", w, h, mpx, date_str, time_str) + [
+        f"* VHS Intensity: {intensity_pct}%",
+        "",
+        "> VHS ENGINE:",
+        f"* Distorsione: {params['vhs_int']:.1f}",
+        f"* Scanlines:   {params['vhs_scan']:.1f}",
+        f"* Color Split: {params['vhs_col']:.1f}",
+    ] + _report_footer()
+    return "\n".join(lines).encode("utf-8")
+
+
+def make_report_distruttivo(img_size, params: dict, ts: str) -> bytes:
+    w, h = img_size
+    mpx = w * h / 1_000_000
+    date_str, time_str = ts.split(" ")
+    density_pct = int((params['dest_size'] + params['dest_num'] + params['dest_disp']) / 6.0 * 100)
+
+    lines = _report_header("DISTRUTTIVO", "block_fragment_engine", w, h, mpx, date_str, time_str) + [
+        f"* Fragment Density: {density_pct}%",
+        "",
+        "> BLOCK SHIFT ENGINE:",
+        f"* Dim. Blocchi:  {params['dest_size']:.1f}",
+        f"* Num. Blocchi:  {params['dest_num']:.1f}",
+        f"* Displacement:  {params['dest_disp']:.1f}",
+    ] + _report_footer()
+    return "\n".join(lines).encode("utf-8")
+
+
+def make_report_noise(img_size, params: dict, ts: str) -> bytes:
+    w, h = img_size
+    mpx = w * h / 1_000_000
+    date_str, time_str = ts.split(" ")
     chaos_pct   = int(params['noise_chaos'] * 100)
-    corruption  = int((vhs_total + dest_total + noise_total) / 3 * 100)
-    rand_pct    = int(params['random_lev'] / 2.0 * 100)
+    decay_pct   = int((params['noise_int'] + params['noise_cov'] + params['noise_chaos'] * 2) / 6.0 * 100)
 
-    # Mappa noise_chaos → tipo motore
-    if params['noise_chaos'] < 0.3:
-        engine = "band_decay_engine"
-    elif params['noise_chaos'] < 0.6:
-        engine = "pixel_scatter_core"
-    elif params['noise_chaos'] < 0.8:
-        engine = "wave_collapse_engine"
-    else:
-        engine = "mixed_entropy_core"
+    if params['noise_chaos'] < 0.3:   engine = "band_decay_engine"
+    elif params['noise_chaos'] < 0.6: engine = "pixel_scatter_core"
+    elif params['noise_chaos'] < 0.8: engine = "wave_collapse_engine"
+    else:                              engine = "mixed_entropy_core"
 
-    # Mappa rand_effect → nome poetico
+    lines = _report_header("NOISE", engine, w, h, mpx, date_str, time_str) + [
+        f"* Signal Decay: {decay_pct}%  |  Chaos: {chaos_pct}%",
+        f"* Mode: {engine.split('_')[0].upper()}",
+        "",
+        "> NOISE ENGINE:",
+        f"* Intensita': {params['noise_int']:.1f}",
+        f"* Coverage:   {params['noise_cov']:.1f}",
+        f"* Chaos:      {params['noise_chaos']:.1f}",
+    ] + _report_footer()
+    return "\n".join(lines).encode("utf-8")
+
+
+def make_report_random(img_size, params: dict, rand_effect_name: str, ts: str) -> bytes:
+    w, h = img_size
+    mpx = w * h / 1_000_000
+    date_str, time_str = ts.split(" ")
+    rand_pct = int(params['random_lev'] / 2.0 * 100)
+
     effect_label = {
         "vhs":         "Magnetic Tape Collapse",
         "distruttivo": "Block Fragment Shift",
@@ -264,60 +336,33 @@ def make_report(img_size, params: dict, rand_effect_name: str, ts: str) -> bytes
         "errore":      "Undefined Decay",
     }.get(rand_effect_name, rand_effect_name.upper())
 
-    date_str, time_str = ts.split(" ")
-
-    lines = [
-        f"GLITCHLAB [LOOP507] // VOL_01 // {w}x{h}px // PNG",
-        f":: MOTORE: {engine} [v2.0]",
-        f":: EFFETTO RANDOM: {effect_label}",
-        f":: ANALISI: VHS_Scan / Block_Shift / Entropy_Noise",
-        f":: PROCESSO: Corruzione Multi-Strato",
-        "",
-        '"Il pixel e\' stato smontato. Il codice ne ha riscritto la struttura."',
-        "",
-        "> TECHNICAL LOG SHEET:",
-        f"* Asset: {w} x {h} px  ({mpx:.2f} Mpx)",
-        f"* Data: {date_str}  //  {time_str}",
-        f"* Corruption Index: {corruption}%",
-        f"* Chaos Level: {chaos_pct}%  |  Randomness: {rand_pct}%",
-        "",
-        "> VHS ENGINE:",
-        f"* Distorsione: {params['vhs_int']:.1f}  //  Scanlines: {params['vhs_scan']:.1f}  //  Color Split: {params['vhs_col']:.1f}",
-        f"* VHS Intensity: {int(vhs_total * 100)}%",
-        "",
-        "> BLOCK SHIFT ENGINE:",
-        f"* Blocchi: {params['dest_size']:.1f}  //  Numero: {params['dest_num']:.1f}  //  Displacement: {params['dest_disp']:.1f}",
-        f"* Fragment Density: {int(dest_total * 100)}%",
-        "",
-        "> NOISE ENGINE:",
-        f"* Intensita': {params['noise_int']:.1f}  //  Coverage: {params['noise_cov']:.1f}  //  Chaos: {params['noise_chaos']:.1f}",
-        f"* Signal Decay: {int(noise_total * 100)}%  |  Mode: {engine.split('_')[0].upper()}",
+    lines = _report_header("RANDOM", "random_selector_engine", w, h, mpx, date_str, time_str) + [
+        f"* Randomness: {rand_pct}%",
+        f"* Effetto estratto: {effect_label}",
         "",
         "> RANDOM ENGINE:",
-        f"* Livello Casualita': {params['random_lev']:.1f}  //  Output: {effect_label}",
-        "",
-        "> Regia e Algoritmo: Loop507",
-        "",
-        "#glitchart #glitchlab #loop507 #vhsaesthetic #blockshift",
-        "#signalcorruption #noisedecay #digitaldestruction #pixelbreak",
-        "#computationalminimalism #datadestruction #experimentalimage",
-    ]
-
+        f"* Livello Casualita': {params['random_lev']:.1f}",
+        f"* Output: {effect_label}",
+    ] + _report_footer()
     return "\n".join(lines).encode("utf-8")
 
 
 # ─── Sessione ─────────────────────────────────────────────────────────────────
 # Chiavi di session_state usate:
-#   processed        → True dopo la prima generazione
-#   img_vhs          → bytes PNG
-#   img_distr        → bytes PNG
-#   img_noise        → bytes PNG
-#   img_random       → bytes PNG
-#   report           → bytes TXT
-#   rand_effect_name → str
+#   processed          → True dopo la prima generazione
+#   img_vhs            → bytes PNG
+#   img_distr          → bytes PNG
+#   img_noise          → bytes PNG
+#   img_random         → bytes PNG
+#   report_vhs         → bytes TXT
+#   report_distruttivo → bytes TXT
+#   report_noise       → bytes TXT
+#   report_random      → bytes TXT
+#   rand_effect_name   → str
 
-for key in ["processed", "img_vhs", "img_distr", "img_noise",
-            "img_random", "report", "rand_effect_name"]:
+for key in ["processed", "img_vhs", "img_distr", "img_noise", "img_random",
+            "report_vhs", "report_distruttivo", "report_noise", "report_random",
+            "rand_effect_name"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
@@ -386,13 +431,16 @@ if uploaded_file is not None:
                 rand_img, rand_name = glitch_random(img, random_lev)
 
             # Salva in session_state → i download_button non triggerano mai rerun
-            st.session_state.img_vhs          = img_to_bytes(vhs_img)
-            st.session_state.img_distr        = img_to_bytes(distr_img)
-            st.session_state.img_noise        = img_to_bytes(noise_img)
-            st.session_state.img_random       = img_to_bytes(rand_img)
-            st.session_state.rand_effect_name = rand_name
-            st.session_state.report           = make_report(img.size, params, rand_name, ts)
-            st.session_state.processed        = True
+            st.session_state.img_vhs             = img_to_bytes(vhs_img)
+            st.session_state.img_distr           = img_to_bytes(distr_img)
+            st.session_state.img_noise           = img_to_bytes(noise_img)
+            st.session_state.img_random          = img_to_bytes(rand_img)
+            st.session_state.rand_effect_name    = rand_name
+            st.session_state.report_vhs          = make_report_vhs(img.size, params, ts)
+            st.session_state.report_distruttivo  = make_report_distruttivo(img.size, params, ts)
+            st.session_state.report_noise        = make_report_noise(img.size, params, ts)
+            st.session_state.report_random       = make_report_random(img.size, params, rand_name, ts)
+            st.session_state.processed           = True
 
         # ── Mostra risultati se disponibili ───────────────────────────────────
         if st.session_state.processed:
@@ -414,17 +462,33 @@ if uploaded_file is not None:
             st.markdown("### ⬇️ Download")
             if live_mode:
                 st.caption("💡 I download salvano l'ultimo frame generato.")
-            d1, d2, d3, d4, d5 = st.columns(5)
-            d1.download_button("📺 VHS",         st.session_state.img_vhs,
-                               "vhs_glitch.png",         "image/png",  key="dl_vhs")
-            d2.download_button("💥 Distruttivo",  st.session_state.img_distr,
-                               "distruttivo_glitch.png", "image/png",  key="dl_distr")
-            d3.download_button("🌀 Noise",        st.session_state.img_noise,
-                               "noise_glitch.png",       "image/png",  key="dl_noise")
-            d4.download_button("🎲 Random",       st.session_state.img_random,
-                               "random_glitch.png",      "image/png",  key="dl_random")
-            d5.download_button("📄 Report .txt",  st.session_state.report,
-                               "glitch_report.txt",      "text/plain", key="dl_report")
+
+            c1, c2, c3, c4 = st.columns(4)
+
+            with c1:
+                st.markdown("**📺 VHS**")
+                st.download_button("⬇️ Immagine",  st.session_state.img_vhs,
+                                   "vhs_glitch.png",      "image/png",  key="dl_vhs")
+                st.download_button("📄 Report",    st.session_state.report_vhs,
+                                   "vhs_report.txt",      "text/plain", key="dl_rep_vhs")
+            with c2:
+                st.markdown("**💥 Distruttivo**")
+                st.download_button("⬇️ Immagine",  st.session_state.img_distr,
+                                   "distruttivo_glitch.png", "image/png",  key="dl_distr")
+                st.download_button("📄 Report",    st.session_state.report_distruttivo,
+                                   "distruttivo_report.txt", "text/plain", key="dl_rep_distr")
+            with c3:
+                st.markdown("**🌀 Noise**")
+                st.download_button("⬇️ Immagine",  st.session_state.img_noise,
+                                   "noise_glitch.png",    "image/png",  key="dl_noise")
+                st.download_button("📄 Report",    st.session_state.report_noise,
+                                   "noise_report.txt",    "text/plain", key="dl_rep_noise")
+            with c4:
+                st.markdown("**🎲 Random**")
+                st.download_button("⬇️ Immagine",  st.session_state.img_random,
+                                   "random_glitch.png",   "image/png",  key="dl_random")
+                st.download_button("📄 Report",    st.session_state.report_random,
+                                   "random_report.txt",   "text/plain", key="dl_rep_random")
 
     except Exception as e:
         st.error(f"Errore nel caricamento dell'immagine: {e}")
