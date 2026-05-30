@@ -692,30 +692,11 @@ if uploaded_file is not None:
         st.image(img, caption="🖼️ Originale", use_container_width=True)
         st.info(f"Dimensioni: {img.size[0]} × {img.size[1]} px")
 
-        # ── Controlli per ogni effetto ─────────────────────────────────────────
-        st.markdown("### 🎛️ Controlli Effetti")
-        all_params = {}  # {effect_key: [val1, val2, val3]}
-
-        # Disponi expander in 2 colonne
-        left_effects  = EFFECTS[:7]
-        right_effects = EFFECTS[7:]
-        col_l, col_r  = st.columns(2)
-
-        for col, eff_list in [(col_l, left_effects), (col_r, right_effects)]:
-            with col:
-                for key, label, emoji, fn, sliders in eff_list:
-                    with st.expander(f"{emoji} {label}", expanded=False):
-                        vals = []
-                        sc = st.columns(len(sliders))
-                        for i, (slabel, smin, smax, sdef, sstep, skey) in enumerate(sliders):
-                            v = sc[i].slider(slabel, smin, smax, sdef, sstep, key=skey)
-                            vals.append(v)
-                        all_params[key] = vals
-
         # ── Modalità Live / Manuale ────────────────────────────────────────────
+        st.markdown("### 🎛️ Controlli Effetti")
         st.markdown("---")
         live_mode = st.checkbox(
-            "⚡ Modalità Live — ogni slider aggiorna in tempo reale",
+            "⚡ Modalità Live — l'anteprima si aggiorna ad ogni slider",
             value=False, key="live_mode"
         )
         should_process = live_mode
@@ -723,47 +704,53 @@ if uploaded_file is not None:
             if st.button("✨ Genera tutti gli effetti"):
                 should_process = True
 
-        # ── Elaborazione ──────────────────────────────────────────────────────
-        if should_process:
-            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            msg = "⚡ Live..." if live_mode else "🔥 Generazione in corso..."
-            with st.spinner(msg):
-                for key, label, emoji, fn, sliders in EFFECTS:
-                    vals = all_params[key]
+        if live_mode:
+            st.caption("💡 I download salvano l'ultimo frame generato.")
+
+        st.markdown("---")
+
+        # ── Expander per ogni effetto: slider + anteprima + download ──────────
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        all_params = {}
+
+        for key, label, emoji, fn, sliders in EFFECTS:
+            with st.expander(f"{emoji} {label}", expanded=False):
+
+                # Slider
+                sc = st.columns(len(sliders))
+                vals = []
+                for i, (slabel, smin, smax, sdef, sstep, skey) in enumerate(sliders):
+                    v = sc[i].slider(slabel, smin, smax, sdef, sstep, key=skey)
+                    vals.append(v)
+                all_params[key] = vals
+
+                # Elabora se live o se si è appena premuto Genera
+                if should_process:
                     result_img = fn(img, *vals)
                     st.session_state[f"img_{key}"] = img_to_bytes(result_img)
                     param_labels = [s[0] for s in sliders]
-                    st.session_state[f"rep_{key}"] = make_report(key, label, img.size, vals, param_labels, ts)
-            st.session_state.processed = True
+                    st.session_state[f"rep_{key}"] = make_report(
+                        key, label, img.size, vals, param_labels, ts
+                    )
+                    st.session_state.processed = True
 
-        # ── Risultati ─────────────────────────────────────────────────────────
-        if st.session_state.processed:
-            header = "⚡ Live — ultimo frame" if live_mode else "🔥 Risultati glitch"
-            st.subheader(header)
-
-            # Griglia 4 colonne
-            for row_start in range(0, len(EFFECTS), 4):
-                row_effects = EFFECTS[row_start:row_start + 4]
-                cols = st.columns(len(row_effects))
-                for col, (key, label, emoji, fn, sliders) in zip(cols, row_effects):
+                # Anteprima + download dentro l'expander
+                if st.session_state.get(f"img_{key}"):
                     img_bytes = st.session_state[f"img_{key}"]
                     rep_bytes = st.session_state[f"rep_{key}"]
-                    with col:
-                        st.image(img_bytes, caption=f"{emoji} {label}", use_container_width=True)
-                        st.download_button(
-                            "⬇️ Immagine", img_bytes,
-                            f"{key}_glitch.png", "image/png",
-                            key=f"dl_img_{key}"
-                        )
-                        st.download_button(
-                            "📄 Report", rep_bytes,
-                            f"{key}_report.txt", "text/plain",
-                            key=f"dl_rep_{key}"
-                        )
-                st.markdown("---")
+                    st.image(img_bytes, caption=f"{emoji} {label}", use_container_width=True)
+                    dl1, dl2 = st.columns(2)
+                    dl1.download_button(
+                        "⬇️ Immagine", img_bytes,
+                        f"{key}_glitch.png", "image/png",
+                        key=f"dl_img_{key}"
+                    )
+                    dl2.download_button(
+                        "📄 Report", rep_bytes,
+                        f"{key}_report.txt", "text/plain",
+                        key=f"dl_rep_{key}"
+                    )
 
-        if live_mode and st.session_state.processed:
-            st.caption("💡 I download salvano l'ultimo frame generato.")
 
     except Exception as e:
         st.error(f"Errore: {e}")
