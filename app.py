@@ -7,7 +7,14 @@ from datetime import datetime
 
 st.set_page_config(page_title="GlitchLabLoop507", layout="wide")
 st.title("🔥 GlitchLabLoop507")
-st.write("Carica una foto e applica 13 effetti glitch — Live o Manuale.")
+st.write("Carica una foto e applica 14 effetti glitch — Live o Manuale.")
+
+
+# ── Helper ────────────────────────────────────────────────────────────────────
+def img_to_bytes(img: Image.Image) -> bytes:
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -763,13 +770,6 @@ if uploaded_file is not None:
         st.info("Assicurati che il file sia un'immagine valida (JPG, JPEG, PNG)")
 else:
     st.info("📁 Carica un'immagine per iniziare!")
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-def img_to_bytes(img: Image.Image) -> bytes:
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
 
 
 # ── Footer ────────────────────────────────────────────────────────────────────
