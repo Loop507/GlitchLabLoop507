@@ -362,57 +362,69 @@ if uploaded_file is not None:
             random_lev=random_lev,
         )
 
-        # ── Pulsante Genera ────────────────────────────────────────────────────
-        generate = st.button("✨ Genera effetti glitch")
+        # ── Modalità: Live vs Manuale ──────────────────────────────────────────
+        st.markdown("---")
+        live_mode = st.checkbox(
+            "⚡ Modalità Live — ogni slider aggiorna le immagini in tempo reale",
+            value=False, key="live_mode"
+        )
 
-        if generate:
-            with st.spinner("🔥 Generazione glitch in corso..."):
-                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Live ON  → elabora ad ogni rerun (ogni slider già triggera rerun da solo)
+        # Live OFF → elabora solo al click del pulsante
+        should_process = live_mode
+        if not live_mode:
+            if st.button("✨ Genera effetti glitch"):
+                should_process = True
 
+        if should_process:
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            spinner_msg = "⚡ Live — aggiornamento..." if live_mode else "🔥 Generazione glitch in corso..."
+            with st.spinner(spinner_msg):
                 vhs_img   = glitch_vhs(img, vhs_int, vhs_scan, vhs_col)
                 distr_img = glitch_distruttivo(img, dest_size, dest_num, dest_disp)
                 noise_img = glitch_noise(img, noise_int, noise_cov, noise_chaos)
                 rand_img, rand_name = glitch_random(img, random_lev)
 
-            # Salva tutto in session_state → i download_button non triggerano rerun
+            # Salva in session_state → i download_button non triggerano mai rerun
             st.session_state.img_vhs          = img_to_bytes(vhs_img)
             st.session_state.img_distr        = img_to_bytes(distr_img)
             st.session_state.img_noise        = img_to_bytes(noise_img)
             st.session_state.img_random       = img_to_bytes(rand_img)
             st.session_state.rand_effect_name = rand_name
-            st.session_state.report = make_report(img.size, params, rand_name, ts)
-            st.session_state.processed = True
+            st.session_state.report           = make_report(img.size, params, rand_name, ts)
+            st.session_state.processed        = True
 
-        # ── Mostra risultati (solo se già generati) ────────────────────────────
+        # ── Mostra risultati se disponibili ───────────────────────────────────
         if st.session_state.processed:
-            st.subheader("🔥 Risultati glitch")
+            label = "⚡ Live — ultimo frame" if live_mode else "🔥 Risultati glitch"
+            st.subheader(label)
             c1, c2, c3, c4 = st.columns(4)
-
             with c1:
-                st.image(st.session_state.img_vhs, caption="📺 VHS", use_container_width=True)
+                st.image(st.session_state.img_vhs,   caption="📺 VHS",         use_container_width=True)
             with c2:
                 st.image(st.session_state.img_distr, caption="💥 Distruttivo", use_container_width=True)
             with c3:
-                st.image(st.session_state.img_noise, caption="🌀 Noise", use_container_width=True)
+                st.image(st.session_state.img_noise, caption="🌀 Noise",       use_container_width=True)
             with c4:
                 st.image(st.session_state.img_random,
                          caption=f"🎲 Random ({st.session_state.rand_effect_name})",
                          use_container_width=True)
 
-            # ── Download — FUORI da qualsiasi st.button → nessun rerun ─────────
+            # ── Download — sempre fuori da st.button → nessun rerun ───────────
             st.markdown("### ⬇️ Download")
+            if live_mode:
+                st.caption("💡 I download salvano l'ultimo frame generato.")
             d1, d2, d3, d4, d5 = st.columns(5)
-
-            d1.download_button("📺 VHS",        st.session_state.img_vhs,
-                               "vhs_glitch.png",        "image/png",  key="dl_vhs")
-            d2.download_button("💥 Distruttivo", st.session_state.img_distr,
-                               "distruttivo_glitch.png","image/png",  key="dl_distr")
-            d3.download_button("🌀 Noise",       st.session_state.img_noise,
-                               "noise_glitch.png",      "image/png",  key="dl_noise")
-            d4.download_button("🎲 Random",      st.session_state.img_random,
-                               "random_glitch.png",     "image/png",  key="dl_random")
-            d5.download_button("📄 Report .txt", st.session_state.report,
-                               "glitch_report.txt",     "text/plain", key="dl_report")
+            d1.download_button("📺 VHS",         st.session_state.img_vhs,
+                               "vhs_glitch.png",         "image/png",  key="dl_vhs")
+            d2.download_button("💥 Distruttivo",  st.session_state.img_distr,
+                               "distruttivo_glitch.png", "image/png",  key="dl_distr")
+            d3.download_button("🌀 Noise",        st.session_state.img_noise,
+                               "noise_glitch.png",       "image/png",  key="dl_noise")
+            d4.download_button("🎲 Random",       st.session_state.img_random,
+                               "random_glitch.png",      "image/png",  key="dl_random")
+            d5.download_button("📄 Report .txt",  st.session_state.report,
+                               "glitch_report.txt",      "text/plain", key="dl_report")
 
     except Exception as e:
         st.error(f"Errore nel caricamento dell'immagine: {e}")
