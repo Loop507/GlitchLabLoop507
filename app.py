@@ -1,372 +1,405 @@
 import streamlit as st
-from PIL import Image, ImageOps
+from PIL import Image
 import numpy as np
 import io
 import random
+from datetime import datetime
 
-# Configurazione della pagina
+# ─── Configurazione pagina ────────────────────────────────────────────────────
 st.set_page_config(page_title="GlitchLabLoop507", layout="centered")
 
-st.title("🔥️ GlitchLabLoop507")
-st.write("Carica una foto e genera 3 versioni glitchate: VHS, Distruttivo e Random!")
+st.title("🔥 GlitchLabLoop507")
+st.write("Carica una foto e genera 3 versioni glitchate: VHS, Distruttivo e Noise!")
 
-# File uploader
-uploaded_file = st.file_uploader("📁 Carica un'immagine", type=["jpg", "jpeg", "png"])
+
+# ─── Effetti glitch (vettorizzati) ────────────────────────────────────────────
 
 def glitch_vhs(img, intensity=1.0, scanline_freq=1.0, color_shift=1.0):
-    """Effetto glitch stile VHS POTENZIATO con controlli personalizzabili"""
+    """Effetto glitch stile VHS — completamente vettorizzato con NumPy."""
     try:
         img = img.convert("RGB")
-        arr = np.array(img)
+        arr = np.array(img, dtype=np.float32)
         h, w, _ = arr.shape
-        
-        # Parametri basati sui controlli utente
-        base_intensity = int(15 + (30 * intensity))  # 15-45
-        freq1 = 3 + (9 * scanline_freq)  # 3-12
-        freq2 = 1 + (5 * scanline_freq)  # 1-6
-        
-        # Scanlines più intense e irregolari
-        for y in range(0, h, 1):
-            # Distorsione sinusoidale con parametri controllabili
-            shift = int(base_intensity * np.sin(y / freq1) + (base_intensity//2) * np.sin(y / freq2))
-            if shift != 0:
-                arr[y:y+1, :, :] = np.roll(arr[y:y+1, :, :], shift, axis=1)
-            
-            # Aggiungi rumore su alcune righe
-            if random.random() < (0.2 + 0.2 * intensity):  # 20-40% chance
-                noise_intensity = int(10 + (20 * intensity))
-                noise = np.random.randint(-noise_intensity, noise_intensity, (1, w, 3))
-                arr[y:y+1, :, :] = np.clip(arr[y:y+1, :, :] + noise, 0, 255)
-        
-        # Separazione canali colore controllabile
-        r, g, b = arr[:,:,0], arr[:,:,1], arr[:,:,2]
-        shift_multiplier = color_shift
-        r_shift = int(15 * shift_multiplier + random.randint(0, int(20 * shift_multiplier)))
-        b_shift = int(-15 * shift_multiplier + random.randint(int(-20 * shift_multiplier), 0))
-        g_shift = int(random.randint(int(-10 * shift_multiplier), int(10 * shift_multiplier)))
-        
-        r = np.roll(r, r_shift, axis=1)
-        b = np.roll(b, b_shift, axis=1)
-        g = np.roll(g, g_shift, axis=0)
-        
-        # Saturazione colori controllabile
-        sat_range = 0.3 * color_shift
-        r_sat = 1.0 + random.uniform(0, sat_range)
-        g_sat = 1.0 - random.uniform(0, sat_range * 0.8)
-        b_sat = 1.0 + random.uniform(-sat_range * 0.5, sat_range)
-        
-        r = np.clip(r * r_sat, 0, 255)
-        g = np.clip(g * g_sat, 0, 255)
-        b = np.clip(b * b_sat, 0, 255)
-        
-        arr = np.stack([r, g, b], axis=2)
-        
-        return Image.fromarray(arr.astype(np.uint8))
+
+        # ── Distorsione scanline vettorizzata ──
+        base_intensity = 15 + 30 * intensity          # 15–45 px
+        freq1 = 3 + 9 * scanline_freq                 # 3–12
+        freq2 = 1 + 5 * scanline_freq                 # 1–6
+        ys = np.arange(h)
+        shifts = (
+            base_intensity * np.sin(ys / freq1)
+            + (base_intensity / 2) * np.sin(ys / freq2)
+        ).astype(int)
+
+        # Applica shift riga per riga con np.roll vettorizzato
+        for y_idx in range(h):
+            s = int(shifts[y_idx])
+            if s:
+                arr[y_idx] = np.roll(arr[y_idx], s, axis=0)
+
+        # ── Rumore su righe casuali (vettorizzato) ──
+        noise_prob = 0.2 + 0.2 * intensity
+        noise_mask = np.random.random(h) < noise_prob
+        noise_intensity = int(10 + 20 * intensity)
+        noise = np.random.randint(
+            -noise_intensity, noise_intensity,
+            (h, w, 3), dtype=np.int16
+        )
+        arr[noise_mask] = np.clip(
+            arr[noise_mask] + noise[noise_mask], 0, 255
+        )
+
+        # ── Separazione canali colore ──
+        sm = color_shift
+        r_shift = int(15 * sm + random.randint(0, max(1, int(20 * sm))))
+        b_shift = int(-15 * sm + random.randint(max(-1, int(-20 * sm)), 0))
+        g_shift = int(random.randint(max(-1, int(-10 * sm)), max(1, int(10 * sm))))
+
+        r = np.roll(arr[:, :, 0], r_shift, axis=1)
+        g = np.roll(arr[:, :, 1], g_shift, axis=0)
+        b = np.roll(arr[:, :, 2], b_shift, axis=1)
+
+        sat_range = 0.3 * sm
+        r = np.clip(r * (1.0 + random.uniform(0, sat_range)), 0, 255)
+        g = np.clip(g * (1.0 - random.uniform(0, sat_range * 0.8)), 0, 255)
+        b = np.clip(b * (1.0 + random.uniform(-sat_range * 0.5, sat_range)), 0, 255)
+
+        result = np.stack([r, g, b], axis=2).astype(np.uint8)
+        return Image.fromarray(result)
     except Exception as e:
-        st.error(f"Errore nell'effetto VHS: {str(e)}")
+        st.error(f"Errore nell'effetto VHS: {e}")
         return img
 
+
 def glitch_distruttivo(img, block_size=1.0, num_blocks=1.0, displacement=1.0):
-    """Effetto glitch distruttivo POTENZIATO con controlli personalizzabili"""
+    """Effetto glitch distruttivo con spostamento di blocchi."""
     try:
         img = img.convert("RGB")
         arr = np.array(img)
         h, w, _ = arr.shape
-        
-        # Riduci requisiti minimi
+
         if w < 60 or h < 60:
             st.warning("Immagine troppo piccola per l'effetto distruttivo")
             return img
-        
-        # Numero di blocchi controllabile
-        base_blocks = min(80, w * h // 1500)
-        total_blocks = int(base_blocks * (0.5 + 1.5 * num_blocks))  # 0.5x - 2x
-        
-        for i in range(total_blocks):
-            # Dimensioni blocchi controllabili
-            base_max_w = min(60, w // 4)
-            base_max_h = min(60, h // 4)
-            
-            max_block_w = int(base_max_w * (0.3 + 1.4 * block_size))  # 0.3x - 1.7x
-            max_block_h = int(base_max_h * (0.3 + 1.4 * block_size))
-            
-            w_block = random.randint(max(5, max_block_w//3), max_block_w)
-            h_block = random.randint(max(5, max_block_h//3), max_block_h)
-            
-            # Posizione iniziale
-            x = random.randint(0, max(0, w - w_block))
-            y = random.randint(0, max(0, h - h_block))
-            
-            # Spostamento controllabile
-            base_displacement = min(w//6, h//6)
-            max_displacement = int(base_displacement * displacement)
-            dx = random.randint(-max_displacement, max_displacement)
-            dy = random.randint(-max_displacement, max_displacement)
-            
-            # Copia il blocco
-            if y + h_block <= h and x + w_block <= w:
-                block = arr[y:y+h_block, x:x+w_block].copy()
-                
-                # Calcola nuova posizione
-                x_new = np.clip(x + dx, 0, w - w_block)
-                y_new = np.clip(y + dy, 0, h - h_block)
-                
-                # Applica distorsione al blocco (più probabile con displacement alto)
-                if random.random() < (0.1 + 0.4 * displacement):
-                    distortion = int(5 + 10 * displacement)
-                    block = np.roll(block, random.randint(-distortion, distortion), axis=1)
-                
-                # Posiziona il blocco
-                arr[y_new:y_new+h_block, x_new:x_new+w_block] = block
-        
-        return Image.fromarray(arr.astype(np.uint8))
-    except Exception as e:
-        st.error(f"Errore nell'effetto distruttivo: {str(e)}")
-        return img
 
-def glitch_noise(img, noise_intensity=1.0, coverage=1.0, chaos=1.0):
-    """Effetto glitch con rumore casuale POTENZIATO e controllabile"""
-    try:
-        img = img.convert("RGB")
-        arr = np.array(img).astype(np.int16)
-        h, w, _ = arr.shape
-        
-        # Parametri controllabili
-        base_intensity = int(30 + (90 * noise_intensity))
-        coverage_factor = 0.3 + (0.7 * coverage)  # Quanto dell'immagine toccare
-        
-        # Tipo di noise basato sul chaos
-        if chaos < 0.3:
-            noise_type = 'bands'
-        elif chaos < 0.6:
-            noise_type = 'pixels'
-        elif chaos < 0.8:
-            noise_type = 'waves'
-        else:
-            noise_type = 'mixed'
-        
-        if noise_type == 'bands':
-            # Rumore a bande
-            num_bands = int(5 + (15 * coverage))
-            for _ in range(num_bands):
-                start_y = random.randint(0, h-1)
-                band_height = int(3 + (27 * noise_intensity))
-                end_y = min(start_y + band_height, h)
-                
-                band_noise = np.random.randint(-base_intensity, base_intensity, (end_y - start_y, w, 3))
-                arr[start_y:end_y] += band_noise
-        
-        elif noise_type == 'pixels':
-            # Rumore pixel casuali
-            base_pixels = w * h // 30
-            num_pixels = int(base_pixels * coverage * (1 + chaos))
-            for _ in range(num_pixels):
-                x = random.randint(0, w-1)
-                y = random.randint(0, h-1)
-                pixel_noise = np.random.randint(-base_intensity, base_intensity, 3)
-                arr[y, x] += pixel_noise
-        
-        elif noise_type == 'waves':
-            # Rumore ondulatorio
-            wave_coverage = int(h * coverage_factor)
-            for y in range(0, h, max(1, h//wave_coverage)):
-                wave_intensity = int(base_intensity * 0.7)
-                wave_freq = 0.1 + (0.4 * chaos)
-                wave_shift = int(wave_intensity * np.sin(y * wave_freq))
-                
-                if wave_shift != 0:
-                    # Applica rumore sulla riga
-                    row_noise = np.random.randint(-base_intensity//2, base_intensity//2, (1, w, 3))
-                    arr[y:y+1] += row_noise
-                    # Shifta la riga
-                    arr[y:y+1] = np.roll(arr[y:y+1], wave_shift, axis=1)
-        
-        else:  # mixed
-            # Combina tutti gli effetti
-            # Rumore generale
-            general_intensity = int(base_intensity * 0.5)
-            general_noise = np.random.randint(-general_intensity, general_intensity, arr.shape)
-            arr += general_noise
-            
-            # Alcune bande
-            num_bands = int(3 + (5 * coverage))
-            for _ in range(num_bands):
-                start_y = random.randint(0, h-10)
-                end_y = start_y + random.randint(2, int(10 + 5 * noise_intensity))
-                band_noise = np.random.randint(-base_intensity, base_intensity, (end_y - start_y, w, 3))
-                arr[start_y:end_y] += band_noise
-        
-        # Saturazione casuale dei canali (controllata dal chaos)
-        if chaos > 0.4:
-            num_channels = int(1 + (2 * chaos))
-            channel_effects = random.sample([0, 1, 2], min(3, num_channels))
-            for channel in channel_effects:
-                multiplier = 0.5 + (1.5 * chaos)
-                multiplier = random.uniform(1/multiplier, multiplier)
-                arr[:,:,channel] = np.clip(arr[:,:,channel] * multiplier, 0, 255)
-        
-        # Clip finale
-        arr = np.clip(arr, 0, 255).astype(np.uint8)
-        
+        base_blocks = min(80, w * h // 1500)
+        total_blocks = int(base_blocks * (0.5 + 1.5 * num_blocks))
+
+        base_max_w = min(60, w // 4)
+        base_max_h = min(60, h // 4)
+        max_bw = max(5, int(base_max_w * (0.3 + 1.4 * block_size)))
+        max_bh = max(5, int(base_max_h * (0.3 + 1.4 * block_size)))
+        base_displacement = min(w // 6, h // 6)
+        max_disp = max(1, int(base_displacement * displacement))
+
+        for _ in range(total_blocks):
+            bw = random.randint(max(5, max_bw // 3), max_bw)
+            bh = random.randint(max(5, max_bh // 3), max_bh)
+            x = random.randint(0, max(0, w - bw))
+            y = random.randint(0, max(0, h - bh))
+
+            if y + bh > h or x + bw > w:
+                continue
+
+            block = arr[y:y + bh, x:x + bw].copy()
+
+            # Distorsione interna al blocco
+            if random.random() < (0.1 + 0.4 * displacement):
+                dist = int(5 + 10 * displacement)
+                block = np.roll(block, random.randint(-dist, dist), axis=1)
+
+            dx = random.randint(-max_disp, max_disp)
+            dy = random.randint(-max_disp, max_disp)
+            x_new = int(np.clip(x + dx, 0, w - bw))
+            y_new = int(np.clip(y + dy, 0, h - bh))
+            arr[y_new:y_new + bh, x_new:x_new + bw] = block
+
         return Image.fromarray(arr)
     except Exception as e:
-        st.error(f"Errore nell'effetto noise: {str(e)}")
+        st.error(f"Errore nell'effetto distruttivo: {e}")
         return img
 
-def glitch_random(img, randomness=1.0):
-    """Applica un effetto glitch completamente casuale"""
+
+def glitch_noise(img, noise_intensity=1.0, coverage=1.0, chaos=1.0):
+    """Effetto glitch con rumore casuale — vettorizzato."""
     try:
-        # Scelta casuale più bilanciata
-        effects = [
-            (glitch_vhs, random.random(), random.random(), random.random()),
-            (glitch_distruttivo, random.random(), random.random(), random.random()),
-            (glitch_noise, random.random(), random.random(), random.random())
-        ]
-        
-        # Possibilità di combinare due effetti basata sul randomness
-        combo_chance = 0.1 + (0.4 * randomness)  # 10-50% chance
-        if random.random() < combo_chance:
-            st.info("🎲 Generando combo di effetti!")
-            effect1, p1, p2, p3 = random.choice(effects)
-            effect2, p4, p5, p6 = random.choice(effects)
-            
-            # Applica primo effetto
-            temp_img = effect1(img, p1, p2, p3)
-            # Applica secondo effetto con parametri ridotti per non sovracaricare
-            return effect2(temp_img, p4 * 0.7, p5 * 0.7, p6 * 0.7)
+        img = img.convert("RGB")
+        arr = np.array(img).astype(np.int32)
+        h, w, _ = arr.shape
+
+        base_intensity = int(30 + 90 * noise_intensity)
+        coverage_factor = 0.3 + 0.7 * coverage
+
+        # Scegli tipo di rumore in base al chaos
+        if chaos < 0.3:
+            noise_type = "bands"
+        elif chaos < 0.6:
+            noise_type = "pixels"
+        elif chaos < 0.8:
+            noise_type = "waves"
         else:
-            # Singolo effetto casuale
-            chosen_effect, p1, p2, p3 = random.choice(effects)
-            # Amplifica i parametri casuali in base al randomness
+            noise_type = "mixed"
+
+        if noise_type == "bands":
+            num_bands = int(5 + 15 * coverage)
+            for _ in range(num_bands):
+                sy = random.randint(0, h - 1)
+                bh = int(3 + 27 * noise_intensity)
+                ey = min(sy + bh, h)
+                arr[sy:ey] += np.random.randint(
+                    -base_intensity, base_intensity, (ey - sy, w, 3)
+                )
+
+        elif noise_type == "pixels":
+            num_pix = int(w * h / 30 * coverage * (1 + chaos))
+            xs = np.random.randint(0, w, num_pix)
+            ys = np.random.randint(0, h, num_pix)
+            pix_noise = np.random.randint(-base_intensity, base_intensity, (num_pix, 3))
+            for i in range(num_pix):
+                arr[ys[i], xs[i]] += pix_noise[i]
+
+        elif noise_type == "waves":
+            wave_rows = np.arange(0, h, max(1, int(h * (1 - coverage_factor) + 1)))
+            wave_freq = 0.1 + 0.4 * chaos
+            for y in wave_rows:
+                wave_shift = int(base_intensity * 0.7 * np.sin(y * wave_freq))
+                arr[y:y + 1] += np.random.randint(
+                    -base_intensity // 2, base_intensity // 2, (1, w, 3)
+                )
+                if wave_shift:
+                    arr[y:y + 1] = np.roll(arr[y:y + 1], wave_shift, axis=1)
+
+        else:  # mixed — vettorizzato al massimo
+            general_noise = np.random.randint(
+                -base_intensity // 2, base_intensity // 2, arr.shape
+            )
+            arr += general_noise
+            num_bands = int(3 + 5 * coverage)
+            for _ in range(num_bands):
+                sy = random.randint(0, max(1, h - 10))
+                ey = min(sy + random.randint(2, int(10 + 5 * noise_intensity)), h)
+                arr[sy:ey] += np.random.randint(
+                    -base_intensity, base_intensity, (ey - sy, w, 3)
+                )
+
+        # Saturazione canali
+        if chaos > 0.4:
+            n_ch = min(3, int(1 + 2 * chaos))
+            for ch in random.sample([0, 1, 2], n_ch):
+                m = 0.5 + 1.5 * chaos
+                mult = random.uniform(1 / m, m)
+                arr[:, :, ch] = np.clip(arr[:, :, ch] * mult, 0, 255)
+
+        arr = np.clip(arr, 0, 255).astype(np.uint8)
+        return Image.fromarray(arr)
+    except Exception as e:
+        st.error(f"Errore nell'effetto noise: {e}")
+        return img
+
+
+def glitch_random(img, randomness=1.0):
+    """Applica un effetto glitch completamente casuale, eventualmente combinato."""
+    try:
+        effects = [glitch_vhs, glitch_distruttivo, glitch_noise]
+        combo_chance = 0.1 + 0.4 * randomness
+
+        def rand_params():
+            return random.random(), random.random(), random.random()
+
+        if random.random() < combo_chance:
+            e1, e2 = random.sample(effects, 2)
+            p1, p2, p3 = rand_params()
+            p4, p5, p6 = rand_params()
+            temp = e1(img, p1, p2, p3)
+            return e2(temp, p4 * 0.7, p5 * 0.7, p6 * 0.7), "combo"
+        else:
+            chosen = random.choice(effects)
+            p1, p2, p3 = rand_params()
             p1 = min(1.0, p1 * (0.5 + randomness))
             p2 = min(1.0, p2 * (0.5 + randomness))
             p3 = min(1.0, p3 * (0.5 + randomness))
-            
-            effect_name = chosen_effect.__name__.replace('glitch_', '')
-            st.info(f"🎲 Effetto casuale scelto: {effect_name}")
-            return chosen_effect(img, p1, p2, p3)
-    
+            return chosen(img, p1, p2, p3), chosen.__name__.replace("glitch_", "")
     except Exception as e:
-        st.error(f"Errore nell'effetto random: {str(e)}")
-        return img
+        st.error(f"Errore nell'effetto random: {e}")
+        return img, "errore"
 
-def convert_img(img):
-    """Converte l'immagine in bytes per il download"""
-    try:
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        return buf.getvalue()
-    except Exception as e:
-        st.error(f"Errore nella conversione: {str(e)}")
-        return None
 
-# Logica principale
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def img_to_bytes(img: Image.Image) -> bytes:
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def make_report(img_size, params: dict, rand_effect_name: str, ts: str) -> bytes:
+    """Genera un report testuale stilizzato in ASCII per i social."""
+    w, h = img_size
+    mpx = w * h / 1_000_000
+
+    lines = [
+        "╔══════════════════════════════════════════════════╗",
+        "║          🔥 G L I T C H L A B L O O P 5 0 7     ║",
+        "╚══════════════════════════════════════════════════╝",
+        "",
+        f"  📅  {ts}",
+        f"  🖼️   Dimensioni originali : {w} × {h} px  ({mpx:.2f} Mpx)",
+        "",
+        "┌─────────────────────────────────────────────────┐",
+        "│  📺  EFFETTO VHS                                │",
+        "└─────────────────────────────────────────────────┘",
+        f"  • Intensità distorsione  : {params['vhs_int']:.1f}",
+        f"  • Frequenza scanlines    : {params['vhs_scan']:.1f}",
+        f"  • Separazione colori     : {params['vhs_col']:.1f}",
+        "",
+        "┌─────────────────────────────────────────────────┐",
+        "│  💥  EFFETTO DISTRUTTIVO                        │",
+        "└─────────────────────────────────────────────────┘",
+        f"  • Dimensione blocchi     : {params['dest_size']:.1f}",
+        f"  • Numero blocchi         : {params['dest_num']:.1f}",
+        f"  • Spostamento            : {params['dest_disp']:.1f}",
+        "",
+        "┌─────────────────────────────────────────────────┐",
+        "│  🌀  EFFETTO NOISE                              │",
+        "└─────────────────────────────────────────────────┘",
+        f"  • Intensità rumore       : {params['noise_int']:.1f}",
+        f"  • Copertura              : {params['noise_cov']:.1f}",
+        f"  • Caos                   : {params['noise_chaos']:.1f}",
+        "",
+        "┌─────────────────────────────────────────────────┐",
+        "│  🎲  EFFETTO RANDOM                             │",
+        "└─────────────────────────────────────────────────┘",
+        f"  • Livello casualità      : {params['random_lev']:.1f}",
+        f"  • Effetto estratto       : {rand_effect_name}",
+        "",
+        "══════════════════════════════════════════════════",
+        "  #GlitchArt #GlitchLabLoop507 #DigitalGlitch",
+        "  #VHSAesthetic #GlitchEffect #ArtificialDecay",
+        "══════════════════════════════════════════════════",
+        "",
+        "  Creato con GlitchLabLoop507 🔥",
+    ]
+
+    text = "\n".join(lines)
+    return text.encode("utf-8")
+
+
+# ─── Sessione ─────────────────────────────────────────────────────────────────
+# Chiavi di session_state usate:
+#   processed        → True dopo la prima generazione
+#   img_vhs          → bytes PNG
+#   img_distr        → bytes PNG
+#   img_noise        → bytes PNG
+#   img_random       → bytes PNG
+#   report           → bytes TXT
+#   rand_effect_name → str
+
+for key in ["processed", "img_vhs", "img_distr", "img_noise",
+            "img_random", "report", "rand_effect_name"]:
+    if key not in st.session_state:
+        st.session_state[key] = None
+
+
+# ─── Upload ────────────────────────────────────────────────────────────────────
+uploaded_file = st.file_uploader("📁 Carica un'immagine", type=["jpg", "jpeg", "png"])
+
 if uploaded_file is not None:
     try:
-        # Carica l'immagine
         img = Image.open(uploaded_file).convert("RGB")
-        
-        # Mostra l'immagine originale
         st.image(img, caption="🖼️ Originale", use_container_width=True)
-        
-        # Informazioni sull'immagine
-        st.info(f"Dimensioni: {img.size[0]}x{img.size[1]} pixel")
-        
-        # --- CONTROLLI EFFETTI ---
+        st.info(f"Dimensioni: {img.size[0]} × {img.size[1]} px")
+
+        # ── Controlli ──────────────────────────────────────────────────────────
         st.markdown("### 🎛️ Controlli Effetti")
-        
-        # Organize controls in expandable sections
+
         with st.expander("📺 Controlli VHS", expanded=False):
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                vhs_intensity = st.slider("Intensità Distorsione", 0.0, 2.0, 1.0, 0.1, key="vhs_int")
-            with col2:
-                vhs_scanlines = st.slider("Frequenza Scanlines", 0.0, 2.0, 1.0, 0.1, key="vhs_scan")
-            with col3:
-                vhs_colors = st.slider("Separazione Colori", 0.0, 2.0, 1.0, 0.1, key="vhs_col")
-        
+            c1, c2, c3 = st.columns(3)
+            vhs_int  = c1.slider("Intensità Distorsione", 0.0, 2.0, 1.0, 0.1, key="vhs_int")
+            vhs_scan = c2.slider("Frequenza Scanlines",   0.0, 2.0, 1.0, 0.1, key="vhs_scan")
+            vhs_col  = c3.slider("Separazione Colori",    0.0, 2.0, 1.0, 0.1, key="vhs_col")
+
         with st.expander("💥 Controlli Distruttivo", expanded=False):
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                dest_blocks = st.slider("Dimensione Blocchi", 0.0, 2.0, 1.0, 0.1, key="dest_size")
-            with col2:
-                dest_number = st.slider("Numero Blocchi", 0.0, 2.0, 1.0, 0.1, key="dest_num")
-            with col3:
-                dest_displacement = st.slider("Spostamento", 0.0, 2.0, 1.0, 0.1, key="dest_disp")
-        
+            c1, c2, c3 = st.columns(3)
+            dest_size = c1.slider("Dimensione Blocchi", 0.0, 2.0, 1.0, 0.1, key="dest_size")
+            dest_num  = c2.slider("Numero Blocchi",     0.0, 2.0, 1.0, 0.1, key="dest_num")
+            dest_disp = c3.slider("Spostamento",        0.0, 2.0, 1.0, 0.1, key="dest_disp")
+
         with st.expander("🌀 Controlli Noise", expanded=False):
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                noise_intensity = st.slider("Intensità Rumore", 0.0, 2.0, 1.0, 0.1, key="noise_int")
-            with col2:
-                noise_coverage = st.slider("Copertura", 0.0, 2.0, 1.0, 0.1, key="noise_cov")
-            with col3:
-                noise_chaos = st.slider("Caos", 0.0, 1.0, 0.5, 0.1, key="noise_chaos")
-        
+            c1, c2, c3 = st.columns(3)
+            noise_int   = c1.slider("Intensità Rumore", 0.0, 2.0, 1.0, 0.1, key="noise_int")
+            noise_cov   = c2.slider("Copertura",        0.0, 2.0, 1.0, 0.1, key="noise_cov")
+            noise_chaos = c3.slider("Caos",             0.0, 1.0, 0.5, 0.1, key="noise_chaos")
+
         with st.expander("🎲 Controlli Random", expanded=False):
-            random_level = st.slider("Livello Casualità", 0.0, 2.0, 1.0, 0.1, key="random_lev")
-        
-        # Genera gli effetti glitch
-        with st.spinner("🔥 Generazione glitch in corso..."):
-            st.write("📺 Generando effetto VHS...")
-            vhs = glitch_vhs(img, vhs_intensity, vhs_scanlines, vhs_colors)
-            
-            st.write("💥 Generando effetto Distruttivo...")
-            distr = glitch_distruttivo(img, dest_blocks, dest_number, dest_displacement)
-            
-            st.write("🎲 Generando effetto Random...")
-            rand = glitch_random(img, random_level)
-        
-        # Pulsante per rigenerare con nuova casualità
-        if st.button("🔄 Rigenera tutti gli effetti con nuova casualità"):
-            st.rerun()
-        
-        # Mostra i risultati
-        st.subheader("🔥 Risultati glitch")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.image(vhs, caption="VHS", use_container_width=True)
-            vhs_data = convert_img(vhs)
-            if vhs_data:
-                st.download_button(
-                    "⬇️ Scarica VHS",
-                    vhs_data,
-                    "vhs_glitch.png",
-                    "image/png"
-                )
-        
-        with col2:
-            st.image(distr, caption="Distruttivo", use_container_width=True)
-            distr_data = convert_img(distr)
-            if distr_data:
-                st.download_button(
-                    "⬇️ Scarica Distruttivo",
-                    distr_data,
-                    "distruttivo_glitch.png",
-                    "image/png"
-                )
-        
-        with col3:
-            st.image(rand, caption="Random", use_container_width=True)
-            rand_data = convert_img(rand)
-            if rand_data:
-                st.download_button(
-                    "⬇️ Scarica Random",
-                    rand_data,
-                    "random_glitch.png",
-                    "image/png"
-                )
-    
+            random_lev = st.slider("Livello Casualità", 0.0, 2.0, 1.0, 0.1, key="random_lev")
+
+        params = dict(
+            vhs_int=vhs_int, vhs_scan=vhs_scan, vhs_col=vhs_col,
+            dest_size=dest_size, dest_num=dest_num, dest_disp=dest_disp,
+            noise_int=noise_int, noise_cov=noise_cov, noise_chaos=noise_chaos,
+            random_lev=random_lev,
+        )
+
+        # ── Pulsante Genera ────────────────────────────────────────────────────
+        generate = st.button("✨ Genera effetti glitch")
+
+        if generate:
+            with st.spinner("🔥 Generazione glitch in corso..."):
+                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                vhs_img   = glitch_vhs(img, vhs_int, vhs_scan, vhs_col)
+                distr_img = glitch_distruttivo(img, dest_size, dest_num, dest_disp)
+                noise_img = glitch_noise(img, noise_int, noise_cov, noise_chaos)
+                rand_img, rand_name = glitch_random(img, random_lev)
+
+            # Salva tutto in session_state → i download_button non triggerano rerun
+            st.session_state.img_vhs          = img_to_bytes(vhs_img)
+            st.session_state.img_distr        = img_to_bytes(distr_img)
+            st.session_state.img_noise        = img_to_bytes(noise_img)
+            st.session_state.img_random       = img_to_bytes(rand_img)
+            st.session_state.rand_effect_name = rand_name
+            st.session_state.report = make_report(img.size, params, rand_name, ts)
+            st.session_state.processed = True
+
+        # ── Mostra risultati (solo se già generati) ────────────────────────────
+        if st.session_state.processed:
+            st.subheader("🔥 Risultati glitch")
+            c1, c2, c3, c4 = st.columns(4)
+
+            with c1:
+                st.image(st.session_state.img_vhs, caption="📺 VHS", use_container_width=True)
+            with c2:
+                st.image(st.session_state.img_distr, caption="💥 Distruttivo", use_container_width=True)
+            with c3:
+                st.image(st.session_state.img_noise, caption="🌀 Noise", use_container_width=True)
+            with c4:
+                st.image(st.session_state.img_random,
+                         caption=f"🎲 Random ({st.session_state.rand_effect_name})",
+                         use_container_width=True)
+
+            # ── Download — FUORI da qualsiasi st.button → nessun rerun ─────────
+            st.markdown("### ⬇️ Download")
+            d1, d2, d3, d4, d5 = st.columns(5)
+
+            d1.download_button("📺 VHS",        st.session_state.img_vhs,
+                               "vhs_glitch.png",        "image/png",  key="dl_vhs")
+            d2.download_button("💥 Distruttivo", st.session_state.img_distr,
+                               "distruttivo_glitch.png","image/png",  key="dl_distr")
+            d3.download_button("🌀 Noise",       st.session_state.img_noise,
+                               "noise_glitch.png",      "image/png",  key="dl_noise")
+            d4.download_button("🎲 Random",      st.session_state.img_random,
+                               "random_glitch.png",     "image/png",  key="dl_random")
+            d5.download_button("📄 Report .txt", st.session_state.report,
+                               "glitch_report.txt",     "text/plain", key="dl_report")
+
     except Exception as e:
-        st.error(f"Errore nel caricamento dell'immagine: {str(e)}")
+        st.error(f"Errore nel caricamento dell'immagine: {e}")
         st.info("Assicurati che il file sia un'immagine valida (JPG, JPEG, PNG)")
 
 else:
     st.info("📁 Carica un'immagine per iniziare!")
 
-# Footer
+# ─── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("---")
-st.markdown("🔥 **GlitchLabLoop507** - Crea effetti glitch unici per le tue foto!")
-st.markdown("*💡 Usa i controlli per personalizzare ogni effetto secondo i tuoi gusti!*")
+st.markdown("🔥 **GlitchLabLoop507** — Crea effetti glitch unici per le tue foto!")
+st.markdown("*💡 Usa i controlli per personalizzare ogni effetto, poi premi **Genera**.*")
