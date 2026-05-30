@@ -234,7 +234,7 @@ def img_to_bytes(img: Image.Image) -> bytes:
 
 def _report_header(effect_name: str, engine: str, w: int, h: int, mpx: float, date_str: str, time_str: str) -> list:
     return [
-        f"GLITCHLAB [LOOP507] // {effect_name} // {w}x{h}px // PNG",
+        f"GLITCHLAB [IMAGE] // {effect_name} // 01 //",
         f":: MOTORE: {engine} [v2.0]",
         f":: PROCESSO: Corruzione Singolo Strato — {effect_name}",
         "",
