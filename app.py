@@ -233,55 +233,77 @@ def img_to_bytes(img: Image.Image) -> bytes:
 
 
 def make_report(img_size, params: dict, rand_effect_name: str, ts: str) -> bytes:
-    """Genera un report testuale stilizzato in ASCII per i social."""
+    """Report editoriale stilizzato — formato social Loop507."""
     w, h = img_size
     mpx = w * h / 1_000_000
 
+    # Calcola valori derivati leggibili
+    vhs_total   = (params['vhs_int'] + params['vhs_scan'] + params['vhs_col']) / 6.0
+    dest_total  = (params['dest_size'] + params['dest_num'] + params['dest_disp']) / 6.0
+    noise_total = (params['noise_int'] + params['noise_cov'] + params['noise_chaos'] * 2) / 6.0
+    chaos_pct   = int(params['noise_chaos'] * 100)
+    corruption  = int((vhs_total + dest_total + noise_total) / 3 * 100)
+    rand_pct    = int(params['random_lev'] / 2.0 * 100)
+
+    # Mappa noise_chaos → tipo motore
+    if params['noise_chaos'] < 0.3:
+        engine = "band_decay_engine"
+    elif params['noise_chaos'] < 0.6:
+        engine = "pixel_scatter_core"
+    elif params['noise_chaos'] < 0.8:
+        engine = "wave_collapse_engine"
+    else:
+        engine = "mixed_entropy_core"
+
+    # Mappa rand_effect → nome poetico
+    effect_label = {
+        "vhs":         "Magnetic Tape Collapse",
+        "distruttivo": "Block Fragment Shift",
+        "noise":       "Signal Entropy Burst",
+        "combo":       "Recursive Dual Corruption",
+        "errore":      "Undefined Decay",
+    }.get(rand_effect_name, rand_effect_name.upper())
+
+    date_str, time_str = ts.split(" ")
+
     lines = [
-        "╔══════════════════════════════════════════════════╗",
-        "║          🔥 G L I T C H L A B L O O P 5 0 7     ║",
-        "╚══════════════════════════════════════════════════╝",
+        f"GLITCHLAB [LOOP507] // VOL_01 // {w}x{h}px // PNG",
+        f":: MOTORE: {engine} [v2.0]",
+        f":: EFFETTO RANDOM: {effect_label}",
+        f":: ANALISI: VHS_Scan / Block_Shift / Entropy_Noise",
+        f":: PROCESSO: Corruzione Multi-Strato",
         "",
-        f"  📅  {ts}",
-        f"  🖼️   Dimensioni originali : {w} × {h} px  ({mpx:.2f} Mpx)",
+        '"Il pixel e\' stato smontato. Il codice ne ha riscritto la struttura."',
         "",
-        "┌─────────────────────────────────────────────────┐",
-        "│  📺  EFFETTO VHS                                │",
-        "└─────────────────────────────────────────────────┘",
-        f"  • Intensità distorsione  : {params['vhs_int']:.1f}",
-        f"  • Frequenza scanlines    : {params['vhs_scan']:.1f}",
-        f"  • Separazione colori     : {params['vhs_col']:.1f}",
+        "> TECHNICAL LOG SHEET:",
+        f"* Asset: {w} x {h} px  ({mpx:.2f} Mpx)",
+        f"* Data: {date_str}  //  {time_str}",
+        f"* Corruption Index: {corruption}%",
+        f"* Chaos Level: {chaos_pct}%  |  Randomness: {rand_pct}%",
         "",
-        "┌─────────────────────────────────────────────────┐",
-        "│  💥  EFFETTO DISTRUTTIVO                        │",
-        "└─────────────────────────────────────────────────┘",
-        f"  • Dimensione blocchi     : {params['dest_size']:.1f}",
-        f"  • Numero blocchi         : {params['dest_num']:.1f}",
-        f"  • Spostamento            : {params['dest_disp']:.1f}",
+        "> VHS ENGINE:",
+        f"* Distorsione: {params['vhs_int']:.1f}  //  Scanlines: {params['vhs_scan']:.1f}  //  Color Split: {params['vhs_col']:.1f}",
+        f"* VHS Intensity: {int(vhs_total * 100)}%",
         "",
-        "┌─────────────────────────────────────────────────┐",
-        "│  🌀  EFFETTO NOISE                              │",
-        "└─────────────────────────────────────────────────┘",
-        f"  • Intensità rumore       : {params['noise_int']:.1f}",
-        f"  • Copertura              : {params['noise_cov']:.1f}",
-        f"  • Caos                   : {params['noise_chaos']:.1f}",
+        "> BLOCK SHIFT ENGINE:",
+        f"* Blocchi: {params['dest_size']:.1f}  //  Numero: {params['dest_num']:.1f}  //  Displacement: {params['dest_disp']:.1f}",
+        f"* Fragment Density: {int(dest_total * 100)}%",
         "",
-        "┌─────────────────────────────────────────────────┐",
-        "│  🎲  EFFETTO RANDOM                             │",
-        "└─────────────────────────────────────────────────┘",
-        f"  • Livello casualità      : {params['random_lev']:.1f}",
-        f"  • Effetto estratto       : {rand_effect_name}",
+        "> NOISE ENGINE:",
+        f"* Intensita': {params['noise_int']:.1f}  //  Coverage: {params['noise_cov']:.1f}  //  Chaos: {params['noise_chaos']:.1f}",
+        f"* Signal Decay: {int(noise_total * 100)}%  |  Mode: {engine.split('_')[0].upper()}",
         "",
-        "══════════════════════════════════════════════════",
-        "  #GlitchArt #GlitchLabLoop507 #DigitalGlitch",
-        "  #VHSAesthetic #GlitchEffect #ArtificialDecay",
-        "══════════════════════════════════════════════════",
+        "> RANDOM ENGINE:",
+        f"* Livello Casualita': {params['random_lev']:.1f}  //  Output: {effect_label}",
         "",
-        "  Creato con GlitchLabLoop507 🔥",
+        "> Regia e Algoritmo: Loop507",
+        "",
+        "#glitchart #glitchlab #loop507 #vhsaesthetic #blockshift",
+        "#signalcorruption #noisedecay #digitaldestruction #pixelbreak",
+        "#computationalminimalism #datadestruction #experimentalimage",
     ]
 
-    text = "\n".join(lines)
-    return text.encode("utf-8")
+    return "\n".join(lines).encode("utf-8")
 
 
 # ─── Sessione ─────────────────────────────────────────────────────────────────
