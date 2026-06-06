@@ -508,6 +508,7 @@ def glitch_op_art_circles(img, frequenza=0.5, contrasto=0.6, blend=0.5):
         # Boost contrasto
         mean = result.mean()
         result = np.clip((result - mean) * (1 + contrasto) + mean, 0, 255)
+        result = np.nan_to_num(result, nan=0.0, posinf=255.0, neginf=0.0)
         return Image.fromarray(result.astype(np.uint8))
     except Exception as e:
         st.error(f"Op Art Circles: {e}"); return img
@@ -556,13 +557,15 @@ def glitch_moire(img, freq1=0.4, freq2=0.6, angolo=0.3):
         arr = np.array(img, dtype=np.float32)
         h, w, _ = arr.shape
         ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
-        a = angolo * np.pi
-        f1 = 0.03 + 0.2 * freq1
-        f2 = 0.025 + 0.18 * freq2
+        a = float(angolo) * np.pi
+        f1 = 0.03 + 0.2 * float(freq1)
+        f2 = 0.025 + 0.18 * float(freq2)
         grid1 = np.sin(xs * f1 * np.cos(a) + ys * f1 * np.sin(a))
         grid2 = np.sin(xs * f2 * np.cos(a + 0.25) + ys * f2 * np.sin(a + 0.25))
-        moire = ((grid1 * grid2) * 0.5 + 0.5)[:, :, np.newaxis]
+        moire = np.nan_to_num((grid1 * grid2) * 0.5 + 0.5, nan=0.5, posinf=1.0, neginf=0.0)
+        moire = moire[:, :, np.newaxis]
         result = arr * moire + (255 - arr) * (1 - moire)
+        result = np.nan_to_num(result, nan=0.0, posinf=255.0, neginf=0.0)
         return Image.fromarray(np.clip(result, 0, 255).astype(np.uint8))
     except Exception as e:
         st.error(f"Moire: {e}"); return img
@@ -803,6 +806,7 @@ def glitch_thermal(img, palette=0.0, rumore=0.2, contrasto=0.6):
         c_lo = np.array(pal)[idx]
         c_hi = np.array(pal)[np.clip(idx + 1, 0, n)]
         result = (c_lo * (1 - frac) + c_hi * frac) * 255
+        result = np.nan_to_num(result, nan=0.0, posinf=255.0, neginf=0.0)
         return Image.fromarray(result.astype(np.uint8))
     except Exception as e:
         st.error(f"Thermal: {e}"); return img
@@ -822,6 +826,8 @@ def glitch_polar(img, forza=0.6, rotazione=0.0, zoom=0.5):
         angle = np.arctan2(ny, nx) + rotazione * np.pi
         px = np.clip(((angle / (2 * np.pi) + 0.5) * w * forza + w * (1 - forza) * 0.5).astype(int), 0, w - 1)
         py = np.clip((r * h * 0.8).astype(int), 0, h - 1)
+        px = np.nan_to_num(px, nan=0).astype(int)
+        py = np.nan_to_num(py, nan=0).astype(int)
         return Image.fromarray(arr[py, px])
     except Exception as e:
         st.error(f"Polar: {e}"); return img
