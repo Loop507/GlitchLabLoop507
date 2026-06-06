@@ -1,5 +1,5 @@
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageFilter
 import numpy as np
 import io
 import random
@@ -7,10 +7,9 @@ from datetime import datetime
 
 st.set_page_config(page_title="GlitchLabLoop507", layout="wide")
 st.title("🔥 GlitchLabLoop507")
-st.write("Carica una foto e applica 14 effetti glitch — Live o Manuale.")
+st.write("Carica una foto e applica 29 effetti glitch — Live o Manuale.")
 
 
-# ── Helper ────────────────────────────────────────────────────────────────────
 def img_to_bytes(img: Image.Image) -> bytes:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -22,6 +21,7 @@ def img_to_bytes(img: Image.Image) -> bytes:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def glitch_vhs(img, intensity=1.0, scanline_freq=1.0, color_shift=1.0):
+    """Sbavatura nastro VHS: righe orizzontali che scivolano + color split."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32)
@@ -35,24 +35,24 @@ def glitch_vhs(img, intensity=1.0, scanline_freq=1.0, color_shift=1.0):
             s = int(shifts[y_idx])
             if s:
                 arr[y_idx] = np.roll(arr[y_idx], s, axis=0)
-        noise_prob = 0.2 + 0.2 * intensity
+        noise_prob = 0.1 + 0.3 * intensity
         noise_mask = np.random.random(h) < noise_prob
         noise_int = int(10 + 20 * intensity)
         noise = np.random.randint(-noise_int, noise_int, (h, w, 3), dtype=np.int16)
         arr[noise_mask] = np.clip(arr[noise_mask] + noise[noise_mask], 0, 255)
         sm = color_shift
-        r_shift = int(15 * sm + random.randint(0, max(1, int(20 * sm))))
-        b_shift = int(-15 * sm + random.randint(max(-1, int(-20 * sm)), 0))
-        g_shift = int(random.randint(max(-1, int(-10 * sm)), max(1, int(10 * sm))))
-        r = np.clip(np.roll(arr[:, :, 0], r_shift, axis=1) * (1.0 + random.uniform(0, 0.3 * sm)), 0, 255)
-        g = np.clip(np.roll(arr[:, :, 1], g_shift, axis=0) * (1.0 - random.uniform(0, 0.24 * sm)), 0, 255)
-        b = np.clip(np.roll(arr[:, :, 2], b_shift, axis=1) * (1.0 + random.uniform(-0.15 * sm, 0.3 * sm)), 0, 255)
+        r_shift = int(8 * sm + 12 * sm)
+        b_shift = int(-8 * sm - 12 * sm)
+        r = np.clip(np.roll(arr[:, :, 0], r_shift, axis=1), 0, 255)
+        g = arr[:, :, 1]
+        b = np.clip(np.roll(arr[:, :, 2], b_shift, axis=1), 0, 255)
         return Image.fromarray(np.stack([r, g, b], axis=2).astype(np.uint8))
     except Exception as e:
         st.error(f"VHS: {e}"); return img
 
 
 def glitch_distruttivo(img, block_size=1.0, num_blocks=1.0, displacement=1.0):
+    """Blocchi rettangolari strappati e riposizionati — collage distruttivo."""
     try:
         img = img.convert("RGB")
         arr = np.array(img)
@@ -61,11 +61,9 @@ def glitch_distruttivo(img, block_size=1.0, num_blocks=1.0, displacement=1.0):
             return img
         base_blocks = min(80, w * h // 1500)
         total_blocks = int(base_blocks * (0.5 + 1.5 * num_blocks))
-        base_max_w = min(60, w // 4)
-        base_max_h = min(60, h // 4)
-        max_bw = max(5, int(base_max_w * (0.3 + 1.4 * block_size)))
-        max_bh = max(5, int(base_max_h * (0.3 + 1.4 * block_size)))
-        max_disp = max(1, int(min(w // 6, h // 6) * displacement))
+        max_bw = max(5, int(min(60, w // 4) * (0.3 + 1.4 * block_size)))
+        max_bh = max(5, int(min(60, h // 4) * (0.3 + 1.4 * block_size)))
+        max_disp = max(1, int(min(w // 4, h // 4) * displacement))
         for _ in range(total_blocks):
             bw = random.randint(max(5, max_bw // 3), max_bw)
             bh = random.randint(max(5, max_bh // 3), max_bh)
@@ -74,8 +72,6 @@ def glitch_distruttivo(img, block_size=1.0, num_blocks=1.0, displacement=1.0):
             if y + bh > h or x + bw > w:
                 continue
             block = arr[y:y + bh, x:x + bw].copy()
-            if random.random() < (0.1 + 0.4 * displacement):
-                block = np.roll(block, random.randint(-int(5 + 10 * displacement), int(5 + 10 * displacement)), axis=1)
             x_new = int(np.clip(x + random.randint(-max_disp, max_disp), 0, w - bw))
             y_new = int(np.clip(y + random.randint(-max_disp, max_disp), 0, h - bh))
             arr[y_new:y_new + bh, x_new:x_new + bw] = block
@@ -84,149 +80,165 @@ def glitch_distruttivo(img, block_size=1.0, num_blocks=1.0, displacement=1.0):
         st.error(f"Distruttivo: {e}"); return img
 
 
-def glitch_noise(img, noise_intensity=1.0, coverage=1.0, chaos=1.0):
+def glitch_noise(img, intensita=1.0, copertura=1.0, tipo=0.0):
+    """Rumore digitale: 0=bande, 0.5=pixel sparsi, 1=onde."""
     try:
         img = img.convert("RGB")
         arr = np.array(img).astype(np.int32)
         h, w, _ = arr.shape
-        base_intensity = int(30 + 90 * noise_intensity)
-        coverage_factor = 0.3 + 0.7 * coverage
-        if chaos < 0.3:   noise_type = "bands"
-        elif chaos < 0.6: noise_type = "pixels"
-        elif chaos < 0.8: noise_type = "waves"
-        else:              noise_type = "mixed"
-        if noise_type == "bands":
-            for _ in range(int(5 + 15 * coverage)):
+        base = int(30 + 90 * intensita)
+
+        if tipo < 0.33:
+            # Bande orizzontali
+            n_bands = int(5 + 20 * copertura)
+            for _ in range(n_bands):
                 sy = random.randint(0, h - 1)
-                ey = min(sy + int(3 + 27 * noise_intensity), h)
-                arr[sy:ey] += np.random.randint(-base_intensity, base_intensity, (ey - sy, w, 3))
-        elif noise_type == "pixels":
-            num_pix = int(w * h / 30 * coverage * (1 + chaos))
+                ey = min(sy + int(2 + 20 * intensita), h)
+                arr[sy:ey] += np.random.randint(-base, base, (ey - sy, w, 3))
+        elif tipo < 0.66:
+            # Pixel sparsi
+            num_pix = int(w * h * 0.05 * copertura)
             xs = np.random.randint(0, w, num_pix)
             ys = np.random.randint(0, h, num_pix)
-            pn = np.random.randint(-base_intensity, base_intensity, (num_pix, 3))
             for i in range(num_pix):
-                arr[ys[i], xs[i]] += pn[i]
-        elif noise_type == "waves":
-            wave_freq = 0.1 + 0.4 * chaos
-            for y in np.arange(0, h, max(1, int(h * (1 - coverage_factor) + 1))):
-                ws = int(base_intensity * 0.7 * np.sin(y * wave_freq))
-                arr[y:y + 1] += np.random.randint(-base_intensity // 2, base_intensity // 2, (1, w, 3))
+                arr[ys[i], xs[i]] = np.random.randint(0, 256, 3)
+        else:
+            # Onde di rumore
+            for y in range(0, h, max(1, int(h * (1 - copertura) * 0.5 + 1))):
+                ws = int(base * 0.8 * np.sin(y * 0.15))
+                arr[y:y + 1] += np.random.randint(-base // 2, base // 2, (1, w, 3))
                 if ws:
                     arr[y:y + 1] = np.roll(arr[y:y + 1], ws, axis=1)
-        else:
-            arr += np.random.randint(-base_intensity // 2, base_intensity // 2, arr.shape)
-            for _ in range(int(3 + 5 * coverage)):
-                sy = random.randint(0, max(1, h - 10))
-                ey = min(sy + random.randint(2, int(10 + 5 * noise_intensity)), h)
-                arr[sy:ey] += np.random.randint(-base_intensity, base_intensity, (ey - sy, w, 3))
-        if chaos > 0.4:
-            for ch in random.sample([0, 1, 2], min(3, int(1 + 2 * chaos))):
-                m = 0.5 + 1.5 * chaos
-                arr[:, :, ch] = np.clip(arr[:, :, ch] * random.uniform(1 / m, m), 0, 255)
+
         return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
     except Exception as e:
         st.error(f"Noise: {e}"); return img
 
 
-def glitch_pixel_sort(img, threshold=0.5, direction=0.5, strength=1.0):
-    """Ordina pixel per luminosità — effetto colatura."""
+def glitch_pixel_sort(img, soglia=0.5, asse=0.0, span_max=1.0):
+    """Ordina pixel per luminosità in segmenti contigui — colature nette."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.uint8)
         h, w, _ = arr.shape
         lum = 0.299 * arr[:, :, 0] + 0.587 * arr[:, :, 1] + 0.114 * arr[:, :, 2]
-        thresh_val = threshold * 255
-        vertical = direction > 0.5
+        thresh = soglia * 255
+        max_span = max(4, int(span_max * max(h, w) * 0.8))
 
-        if not vertical:
-            # Sort orizzontale
-            coverage = int(h * (0.3 + 0.7 * strength))
-            rows = random.sample(range(h), min(coverage, h))
-            for y in rows:
-                mask = lum[y] > thresh_val
-                if mask.sum() > 2:
-                    indices = np.where(mask)[0]
-                    segment = arr[y, indices]
-                    sort_key = 0.299 * segment[:, 0] + 0.587 * segment[:, 1] + 0.114 * segment[:, 2]
-                    arr[y, indices] = segment[np.argsort(sort_key)]
+        if asse < 0.5:
+            # Sort orizzontale per righe
+            for y in range(h):
+                row_lum = lum[y]
+                x = 0
+                while x < w:
+                    if row_lum[x] > thresh:
+                        end = x
+                        while end < w and row_lum[end] > thresh and (end - x) < max_span:
+                            end += 1
+                        if end - x > 1:
+                            seg = arr[y, x:end]
+                            sk = 0.299 * seg[:, 0] + 0.587 * seg[:, 1] + 0.114 * seg[:, 2]
+                            arr[y, x:end] = seg[np.argsort(sk)]
+                        x = end
+                    else:
+                        x += 1
         else:
-            # Sort verticale
-            coverage = int(w * (0.3 + 0.7 * strength))
-            cols = random.sample(range(w), min(coverage, w))
-            for x in cols:
-                mask = lum[:, x] > thresh_val
-                if mask.sum() > 2:
-                    indices = np.where(mask)[0]
-                    segment = arr[indices, x]
-                    sort_key = 0.299 * segment[:, 0] + 0.587 * segment[:, 1] + 0.114 * segment[:, 2]
-                    arr[indices, x] = segment[np.argsort(sort_key)]
+            # Sort verticale per colonne
+            for x in range(w):
+                col_lum = lum[:, x]
+                y = 0
+                while y < h:
+                    if col_lum[y] > thresh:
+                        end = y
+                        while end < h and col_lum[end] > thresh and (end - y) < max_span:
+                            end += 1
+                        if end - y > 1:
+                            seg = arr[y:end, x]
+                            sk = 0.299 * seg[:, 0] + 0.587 * seg[:, 1] + 0.114 * seg[:, 2]
+                            arr[y:end, x] = seg[np.argsort(sk)]
+                        y = end
+                    else:
+                        y += 1
         return Image.fromarray(arr)
     except Exception as e:
         st.error(f"Pixel Sort: {e}"); return img
 
 
-def glitch_wave_warp(img, amplitude=1.0, frequency=1.0, axis=0.5):
-    """Deformazione sinusoidale — effetto liquido."""
+def glitch_wave_warp(img, ampiezza=1.0, frequenza=1.0, asse=0.5):
+    """Deformazione sinusoidale — effetto liquido/jello."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.uint8)
         h, w, _ = arr.shape
         out = np.zeros_like(arr)
-        amp_x = int(20 + 40 * amplitude)
-        amp_y = int(15 + 30 * amplitude)
-        freq_x = 0.02 + 0.08 * frequency
-        freq_y = 0.015 + 0.06 * frequency
-
-        ys = np.arange(h)
+        amp_x = int(20 + 60 * ampiezza)
+        amp_y = int(15 + 45 * ampiezza)
+        freq_x = 0.01 + 0.09 * frequenza
+        freq_y = 0.008 + 0.07 * frequenza
         xs = np.arange(w)
-        # Warp orizzontale
-        dx = (amp_x * np.sin(ys * freq_x)).astype(int)
-        for y in range(h):
-            src_x = np.clip(xs + dx[y], 0, w - 1)
-            out[y] = arr[y, src_x]
-        arr2 = out.copy()
-        # Warp verticale
-        dy = (amp_y * np.sin(xs * freq_y)).astype(int)
-        for x in range(w):
-            src_y = np.clip(ys + dy[x], 0, h - 1)
-            out[:, x] = arr2[src_y, x]
+        ys = np.arange(h)
+
+        if asse <= 0.5:
+            # Warp orizzontale (righe che oscillano)
+            dx = (amp_x * np.sin(ys * freq_x)).astype(int)
+            for y in range(h):
+                src_x = np.clip(xs + dx[y], 0, w - 1)
+                out[y] = arr[y, src_x]
+        else:
+            # Warp verticale (colonne che oscillano)
+            dy = (amp_y * np.sin(xs * freq_y)).astype(int)
+            for x in range(w):
+                src_y = np.clip(ys + dy[x], 0, h - 1)
+                out[:, x] = arr[src_y, x]
+
         return Image.fromarray(out)
     except Exception as e:
         st.error(f"Wave Warp: {e}"); return img
 
 
-def glitch_chromatic(img, radius=1.0, angle=0.5, strength=1.0):
-    """Aberrazione cromatica radiale dal centro."""
+def glitch_chromatic(img, forza=1.0, angolo=0.0, zoom_aberr=0.5):
+    """Aberrazione cromatica: R/G/B spostati in direzioni diverse."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.uint8)
         h, w, _ = arr.shape
-        out = arr.copy().astype(np.float32)
-        cy, cx = h / 2, w / 2
-        max_shift = int(10 + 30 * strength)
-        angle_rad = angle * 2 * np.pi
+        out = np.zeros_like(arr)
+        max_shift = int(5 + 40 * forza)
+        a = angolo * 2 * np.pi
 
-        for ch, ch_angle in enumerate([angle_rad, angle_rad + 2.094, angle_rad + 4.189]):
-            shift_x = int(max_shift * radius * np.cos(ch_angle))
-            shift_y = int(max_shift * radius * np.sin(ch_angle))
-            out[:, :, ch] = np.roll(np.roll(arr[:, :, ch], shift_x, axis=1), shift_y, axis=0)
+        # Tre canali si spostano in direzioni a 120° tra loro
+        for ch, angle_offset in enumerate([a, a + 2.094, a + 4.189]):
+            sx = int(max_shift * np.cos(angle_offset))
+            sy = int(max_shift * np.sin(angle_offset))
+            out[:, :, ch] = np.roll(np.roll(arr[:, :, ch], sx, axis=1), sy, axis=0)
+
+        # Zoom aberrazione: i canali si zoomano leggermente (bordi scoloriti)
+        if zoom_aberr > 0.05:
+            scale = 1.0 + zoom_aberr * 0.05
+            for ch in [0, 2]:
+                ch_img = Image.fromarray(out[:, :, ch])
+                new_w = int(w * scale)
+                new_h = int(h * scale)
+                zoomed = np.array(ch_img.resize((new_w, new_h), Image.BILINEAR))
+                y0 = (new_h - h) // 2
+                x0 = (new_w - w) // 2
+                out[:, :, ch] = zoomed[y0:y0+h, x0:x0+w]
 
         return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
     except Exception as e:
         st.error(f"Chromatic: {e}"); return img
 
 
-def glitch_datamosh(img, block_size=1.0, decay=1.0, num_frames=1.0):
-    """Simula corruzione video — blocchi congelati sovrapposti."""
+def glitch_datamosh(img, block_size=1.0, decay=0.5, num_blocks=0.5):
+    """Blocchi di frame congelati sovrapposti — corruzione video."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32)
         h, w, _ = arr.shape
-        n_blocks = int(20 + 60 * num_frames)
-        bw = max(8, int((w // 8) * (0.3 + 1.4 * block_size)))
-        bh = max(8, int((h // 8) * (0.3 + 1.4 * block_size)))
-        alpha = 0.3 + 0.6 * decay  # quanto il blocco sovrascrive
+        n_blocks = int(15 + 60 * num_blocks)
+        bw = max(8, int((w // 6) * (0.3 + 1.4 * block_size)))
+        bh = max(8, int((h // 6) * (0.3 + 1.4 * block_size)))
+        alpha = 0.4 + 0.55 * decay
 
         for _ in range(n_blocks):
             x1 = random.randint(0, max(0, w - bw))
@@ -242,49 +254,44 @@ def glitch_datamosh(img, block_size=1.0, decay=1.0, num_frames=1.0):
         st.error(f"Datamosh: {e}"); return img
 
 
-def glitch_scanline_burn(img, intensity=1.0, density=1.0, color_bleed=1.0):
-    """Brucia righe — estetica CRT morto."""
+def glitch_scanline_burn(img, intensita=1.0, densita=0.4, color_bleed=0.5):
+    """Righe bruciate CRT: bianche, nere o RGB puri."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32)
         h, w, _ = arr.shape
-        n_burns = int(5 + 40 * density)
+        n_burns = int(3 + 50 * densita)
 
         for _ in range(n_burns):
             y = random.randint(0, h - 1)
-            bh = random.randint(1, max(1, int(8 * intensity)))
+            bh = random.randint(1, max(1, int(6 * intensita)))
             ey = min(y + bh, h)
             mode = random.random()
-            if mode < 0.3:
-                arr[y:ey] = 255  # bianco
-            elif mode < 0.6:
-                arr[y:ey] = 0    # nero
+            if mode < 0.33:
+                arr[y:ey] = 255
+            elif mode < 0.66:
+                arr[y:ey] = 0
             else:
-                # banda RGB pura
                 ch = random.randint(0, 2)
-                band = np.zeros((ey - y, w, 3))
-                band[:, :, ch] = 255 * (0.5 + 0.5 * color_bleed)
-                arr[y:ey] = arr[y:ey] * (1 - color_bleed * 0.8) + band * color_bleed * 0.8
+                arr[y:ey] = 0
+                arr[y:ey, :, ch] = 255
 
-        # Aggiunge RGB bleeding orizzontale
-        if color_bleed > 0.3:
-            bleed_px = int(3 + 12 * color_bleed)
-            arr[:, :, 0] = np.roll(arr[:, :, 0], bleed_px, axis=1)
-            arr[:, :, 2] = np.roll(arr[:, :, 2], -bleed_px, axis=1)
+        if color_bleed > 0.05:
+            px = int(2 + 15 * color_bleed)
+            arr[:, :, 0] = np.roll(arr[:, :, 0], px, axis=1)
+            arr[:, :, 2] = np.roll(arr[:, :, 2], -px, axis=1)
 
         return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
     except Exception as e:
         st.error(f"Scanline Burn: {e}"); return img
 
 
-def glitch_psychedelic(img, hue_shift=1.0, saturation=1.0, invert=0.0):
-    """Rotazione hue estrema + saturazione psichedelica."""
+def glitch_psychedelic(img, hue_shift=0.3, saturazione=0.5, inversione=0.0):
+    """Rotazione hue + saturazione estrema + inversione canale."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32) / 255.0
         h, w, _ = arr.shape
-
-        # Hue rotation via matrix
         shift = hue_shift * 2 * np.pi
         cos_h, sin_h = np.cos(shift), np.sin(shift)
         hue_matrix = np.array([
@@ -298,72 +305,57 @@ def glitch_psychedelic(img, hue_shift=1.0, saturation=1.0, invert=0.0):
              0.072 - cos_h * 0.072 - sin_h * 0.283,
              0.072 + cos_h * 0.928 + sin_h * 0.283],
         ])
-        flat = arr.reshape(-1, 3)
-        rotated = flat @ hue_matrix.T
-        arr = np.clip(rotated, 0, 1).reshape(h, w, 3)
-
-        # Saturazione: allontana dal grigio
+        arr = np.clip((arr.reshape(-1, 3) @ hue_matrix.T).reshape(h, w, 3), 0, 1)
         gray = arr.mean(axis=2, keepdims=True)
-        arr = np.clip(gray + (arr - gray) * (1.0 + saturation * 3.0), 0, 1)
-
-        # Inversione parziale per canale
-        if invert > 0.1:
+        arr = np.clip(gray + (arr - gray) * (1.0 + saturazione * 4.0), 0, 1)
+        if inversione > 0.05:
             for ch in range(3):
-                if random.random() < invert:
+                if random.random() < inversione:
                     arr[:, :, ch] = 1.0 - arr[:, :, ch]
-
         return Image.fromarray((arr * 255).astype(np.uint8))
     except Exception as e:
         st.error(f"Psychedelic: {e}"); return img
 
 
-def glitch_channel_swap(img, mode=0.5, intensity=1.0, blend=0.5):
-    """Mescola canali RGB in combinazioni insolite."""
+def glitch_channel_swap(img, modalita=0.0, blend=0.6, shift_px=0.0):
+    """Scambia canali RGB + shift orizzontale opzionale."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.uint8).astype(np.float32)
         r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
-
-        # Scegli combinazione in base al mode
         combos = [
-            (g, b, r),   # GBR
-            (b, r, g),   # BRG
-            (r, b, g),   # RBG
-            (b, g, r),   # BGR (complementare)
-            (g, r, b),   # GRB
+            (g, b, r),              # GBR
+            (b, r, g),              # BRG
+            (r, b, g),              # RBG
+            (b, g, r),              # BGR
+            (g, r, b),              # GRB
             (255 - r, g, 255 - b),  # inversione parziale
         ]
-        idx = int(mode * (len(combos) - 0.01))
+        idx = int(modalita * (len(combos) - 0.01))
         nr, ng, nb = combos[idx]
-
-        # Blend con originale
         result = np.stack([
             r * (1 - blend) + nr * blend,
             g * (1 - blend) + ng * blend,
             b * (1 - blend) + nb * blend,
         ], axis=2)
-
-        # Shift aggiuntivo per intensità
-        if intensity > 0.5:
-            shift = int((intensity - 0.5) * 40)
-            result[:, :, 0] = np.roll(result[:, :, 0], shift, axis=1)
-            result[:, :, 2] = np.roll(result[:, :, 2], -shift, axis=1)
-
+        if shift_px > 0.01:
+            s = int(shift_px * 40)
+            result[:, :, 0] = np.roll(result[:, :, 0], s, axis=1)
+            result[:, :, 2] = np.roll(result[:, :, 2], -s, axis=1)
         return Image.fromarray(np.clip(result, 0, 255).astype(np.uint8))
     except Exception as e:
         st.error(f"Channel Swap: {e}"); return img
 
 
-def glitch_image_feedback(img, zoom=1.0, iterations=1.0, decay=1.0):
-    """Simula feedback telecamera — zoom ricorsivo con dissolvenza."""
+def glitch_image_feedback(img, zoom=0.5, iterazioni=0.4, decay=0.5):
+    """Zoom ricorsivo con dissolvenza — effetto telecamera sul monitor."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32)
         h, w, _ = arr.shape
-        n_iters = int(3 + 7 * iterations)
-        zoom_factor = 1.02 + 0.08 * zoom
-        fade = 0.3 + 0.5 * decay
-
+        n_iters = int(2 + 8 * iterazioni)
+        zoom_factor = 1.03 + 0.1 * zoom
+        fade = 0.4 + 0.5 * decay
         accumulated = arr.copy()
 
         for i in range(n_iters):
@@ -372,71 +364,58 @@ def glitch_image_feedback(img, zoom=1.0, iterations=1.0, decay=1.0):
             new_w = int(w / scale)
             if new_h < 4 or new_w < 4:
                 break
-            # Crop centro
             y0 = (h - new_h) // 2
             x0 = (w - new_w) // 2
-            cropped = arr[y0:y0 + new_h, x0:x0 + new_w]
-            # Ridimensiona al frame originale
             layer = np.array(
-                Image.fromarray(cropped.astype(np.uint8)).resize((w, h), Image.BILINEAR),
+                Image.fromarray(arr[y0:y0+new_h, x0:x0+new_w].astype(np.uint8)).resize((w, h), Image.BILINEAR),
                 dtype=np.float32
             )
             weight = fade ** (i + 1)
-            accumulated = accumulated * (1 - weight * 0.3) + layer * weight * 0.3
+            accumulated = accumulated * (1 - weight * 0.25) + layer * weight * 0.25
 
         return Image.fromarray(np.clip(accumulated, 0, 255).astype(np.uint8))
     except Exception as e:
         st.error(f"Image Feedback: {e}"); return img
 
 
-def glitch_destruction_art(img, cuts=1.0, scatter=1.0, color_shift=1.0):
-    """Taglia l'immagine in strisce e le ricompone caoticamente."""
+def glitch_destruction_art(img, tagli=0.5, scatter=0.4, orientamento=0.0):
+    """Taglia l'immagine in strisce e le ricompone — orientamento controllato."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.uint8)
         h, w, _ = arr.shape
-        out = arr.copy()
-        n_cuts = int(8 + 40 * cuts)
-        vertical = random.random() > 0.5
+        out = np.zeros_like(arr)
+        n_cuts = int(5 + 40 * tagli)
+        vertical = orientamento > 0.5  # 0=orizzontale, 1=verticale
 
         if vertical:
-            indices = sorted(random.sample(range(w), min(n_cuts, w)))
-            strips = []
-            prev = 0
-            for idx in indices:
-                if idx > prev:
-                    strips.append(arr[:, prev:idx].copy())
-                prev = idx
-            if prev < w:
-                strips.append(arr[:, prev:].copy())
+            indices = sorted(random.sample(range(1, w), min(n_cuts, w - 1)))
+            boundaries = [0] + indices + [w]
+            strips = [arr[:, boundaries[i]:boundaries[i+1]].copy() for i in range(len(boundaries)-1) if boundaries[i+1] > boundaries[i]]
             random.shuffle(strips)
             x = 0
             for strip in strips:
                 sw = strip.shape[1]
                 if x + sw <= w:
-                    if color_shift > 0.3 and random.random() < color_shift * 0.5:
-                        strip = strip[:, :, ::-1]  # invert channels
-                    dx = random.randint(-int(scatter * 20), int(scatter * 20))
-                    src_x = np.clip(np.arange(sw) + dx, 0, sw - 1)
-                    out[:, x:x + sw] = strip[:, src_x]
+                    if scatter > 0.1:
+                        dx = random.randint(-int(scatter * 15), int(scatter * 15))
+                        cols = np.clip(np.arange(sw) + dx, 0, sw - 1)
+                        strip = strip[:, cols]
+                    out[:, x:x + sw] = strip
                     x += sw
         else:
-            indices = sorted(random.sample(range(h), min(n_cuts, h)))
-            strips = []
-            prev = 0
-            for idx in indices:
-                if idx > prev:
-                    strips.append(arr[prev:idx, :].copy())
-                prev = idx
-            if prev < h:
-                strips.append(arr[prev:, :].copy())
+            indices = sorted(random.sample(range(1, h), min(n_cuts, h - 1)))
+            boundaries = [0] + indices + [h]
+            strips = [arr[boundaries[i]:boundaries[i+1], :].copy() for i in range(len(boundaries)-1) if boundaries[i+1] > boundaries[i]]
             random.shuffle(strips)
             y = 0
             for strip in strips:
                 sh = strip.shape[0]
                 if y + sh <= h:
-                    if color_shift > 0.3 and random.random() < color_shift * 0.5:
-                        strip = np.roll(strip, random.randint(-30, 30), axis=1)
+                    if scatter > 0.1:
+                        dy = random.randint(-int(scatter * 15), int(scatter * 15))
+                        rows = np.clip(np.arange(sh) + dy, 0, sh - 1)
+                        strip = strip[rows, :]
                     out[y:y + sh, :] = strip
                     y += sh
 
@@ -445,81 +424,75 @@ def glitch_destruction_art(img, cuts=1.0, scatter=1.0, color_shift=1.0):
         st.error(f"Destruction Art: {e}"); return img
 
 
-def glitch_analogic(img, sync_loss=1.0, color_bleed=1.0, static=1.0):
-    """Segnale analogico che perde sincronismo — TV mal sintonizzato."""
+def glitch_analogic(img, sync_loss=0.5, color_bleed=0.4, static=0.3):
+    """TV analogica mal sintonizzata: righe che scivolano + static."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32)
         h, w, _ = arr.shape
 
-        # Perdita di sincronismo: righe che scivolano lateralmente
-        n_desync = int(h * (0.1 + 0.5 * sync_loss))
+        # Righe che scivolano lateralmente in modo irregolare
+        n_desync = int(h * (0.05 + 0.6 * sync_loss))
         desync_rows = np.random.choice(h, n_desync, replace=False)
         for y in desync_rows:
-            shift = int(random.gauss(0, 30 * sync_loss))
+            shift = int(np.random.normal(0, 25 * sync_loss))
             arr[y] = np.roll(arr[y], shift, axis=0)
 
-        # Color bleed verticale (i colori "colano" verso il basso)
-        if color_bleed > 0.1:
-            bleed_strength = color_bleed * 0.3
-            for ch in range(3):
-                arr[:, :, ch] = (
-                    arr[:, :, ch] * (1 - bleed_strength)
-                    + np.roll(arr[:, :, ch], int(3 + 8 * color_bleed), axis=0) * bleed_strength
-                )
+        # Blocchi di righe che scivolano insieme (sync loss a blocchi)
+        if sync_loss > 0.3:
+            n_blocks = int(3 + 8 * sync_loss)
+            for _ in range(n_blocks):
+                y0 = random.randint(0, h - 5)
+                y1 = min(y0 + random.randint(3, 20), h)
+                shift = int(np.random.normal(0, 40 * sync_loss))
+                arr[y0:y1] = np.roll(arr[y0:y1], shift, axis=1)
 
-        # Static: rumore bianco sparso
-        if static > 0.1:
-            n_static = int(w * h * 0.01 * static)
-            xs = np.random.randint(0, w, n_static)
-            ys = np.random.randint(0, h, n_static)
-            vals = np.random.choice([0, 255], n_static)
-            for i in range(n_static):
-                arr[ys[i], xs[i]] = vals[i]
+        # Color bleed verticale
+        if color_bleed > 0.05:
+            s = int(2 + 10 * color_bleed)
+            for ch in range(3):
+                arr[:, :, ch] = arr[:, :, ch] * 0.75 + np.roll(arr[:, :, ch], s, axis=0) * 0.25
+
+        # Static
+        if static > 0.05:
+            n_st = int(w * h * 0.008 * static)
+            xs = np.random.randint(0, w, n_st)
+            ys = np.random.randint(0, h, n_st)
+            v = np.random.choice([0.0, 255.0], n_st)
+            for i in range(n_st):
+                arr[ys[i], xs[i]] = v[i]
 
         return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
     except Exception as e:
         st.error(f"Analogic: {e}"); return img
 
 
-def glitch_displacement_map(img, strength=1.0, scale=0.5, channel=0.5):
-    """Usa l'immagine stessa come mappa di spostamento — effetto liquido/glitch organico."""
+def glitch_displacement_map(img, forza=0.5, blur_scala=0.4, canale=0.0):
+    """L'immagine si sposta seguendo se stessa — effetto organico/liquido."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32)
         h, w, _ = arr.shape
-
-        # Blur della mappa per evitare rumore puro (simulato con media locale)
-        blur_radius = max(1, int(3 + 12 * scale))
-        from PIL import ImageFilter
-        map_img = Image.fromarray(arr.astype(np.uint8)).filter(
-            ImageFilter.GaussianBlur(radius=blur_radius)
+        blur_r = max(1, int(2 + 15 * blur_scala))
+        disp_map = np.array(
+            Image.fromarray(arr.astype(np.uint8)).filter(ImageFilter.GaussianBlur(blur_r)),
+            dtype=np.float32
         )
-        disp_map = np.array(map_img, dtype=np.float32)
-
-        # Sceglie quale canale usare come mappa X e quale come Y
-        ch_idx = int(channel * 2.99)          # 0=R, 1=G, 2=B
-        ch_y   = (ch_idx + 1) % 3
-        map_x  = (disp_map[:, :, ch_idx] / 255.0 - 0.5) * 2  # -1 … +1
-        map_y  = (disp_map[:, :, ch_y]   / 255.0 - 0.5) * 2
-
-        max_disp = int(20 + 80 * strength)
-        dx = (map_x * max_disp).astype(int)
-        dy = (map_y * max_disp).astype(int)
-
-        # Griglia coordinate sorgente
-        ys_grid, xs_grid = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
-        src_x = np.clip(xs_grid + dx, 0, w - 1)
-        src_y = np.clip(ys_grid + dy, 0, h - 1)
-
-        out = arr[src_y, src_x].astype(np.uint8)
-        return Image.fromarray(out)
+        ch_x = int(canale * 2.99)
+        ch_y = (ch_x + 1) % 3
+        map_x = (disp_map[:, :, ch_x] / 255.0 - 0.5) * 2
+        map_y = (disp_map[:, :, ch_y] / 255.0 - 0.5) * 2
+        max_d = int(10 + 90 * forza)
+        ys_g, xs_g = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
+        src_x = np.clip(xs_g + (map_x * max_d).astype(int), 0, w - 1)
+        src_y = np.clip(ys_g + (map_y * max_d).astype(int), 0, h - 1)
+        return Image.fromarray(arr[src_y, src_x].astype(np.uint8))
     except Exception as e:
         st.error(f"Displacement Map: {e}"); return img
 
 
-def glitch_op_art_circles(img, frequency=1.0, contrast=1.0, blend=0.5):
-    """Cerchi concentrici che distorcono l'immagine — Op Art ipnotica."""
+def glitch_op_art_circles(img, frequenza=0.5, contrasto=0.6, blend=0.5):
+    """Cerchi concentrici che invertono l'immagine — Op Art ipnotica."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32)
@@ -527,27 +500,28 @@ def glitch_op_art_circles(img, frequency=1.0, contrast=1.0, blend=0.5):
         cy, cx = h / 2, w / 2
         ys, xs = np.mgrid[0:h, 0:w]
         dist = np.sqrt((xs - cx) ** 2 + (ys - cy) ** 2)
-        freq = 0.05 + 0.15 * frequency
-        wave = np.sin(dist * freq) * 0.5 + 0.5  # 0…1
+        freq = 0.03 + 0.2 * frequenza
+        wave = np.sin(dist * freq) * 0.5 + 0.5
         wave3 = wave[:, :, np.newaxis]
-        contrast_arr = np.clip(arr * (0.5 + contrast), 0, 255)
         inverted = 255 - arr
         result = arr * (1 - blend * wave3) + inverted * (blend * wave3)
-        result = np.clip(result * (0.7 + 0.6 * contrast_arr / 255), 0, 255)
+        # Boost contrasto
+        mean = result.mean()
+        result = np.clip((result - mean) * (1 + contrasto) + mean, 0, 255)
         return Image.fromarray(result.astype(np.uint8))
     except Exception as e:
         st.error(f"Op Art Circles: {e}"); return img
 
 
-def glitch_halftone(img, dot_size=1.0, angle=0.3, color_mode=0.5):
-    """Puntini tipografici — stampa offset anni '60."""
+def glitch_halftone(img, dim_punto=0.4, sfondo_bianco=1.0, colore=0.7):
+    """Retino tipografico: punti proporzionali alla luminosità."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32)
         h, w, _ = arr.shape
-        cell = max(4, int(4 + 16 * dot_size))
-        out = np.zeros_like(arr)
-        angle_rad = angle * np.pi
+        cell = max(3, int(3 + 17 * dim_punto))
+        bg_val = 255.0 * sfondo_bianco
+        out = np.full((h, w, 3), bg_val, dtype=np.float32)
 
         for y in range(0, h, cell):
             for x in range(0, w, cell):
@@ -555,38 +529,38 @@ def glitch_halftone(img, dot_size=1.0, angle=0.3, color_mode=0.5):
                 if patch.size == 0:
                     continue
                 avg = patch.mean(axis=(0, 1))
-                lum = (avg[0]*0.299 + avg[1]*0.587 + avg[2]*0.114) / 255
-                radius = int((cell / 2) * (1 - lum) * 1.5)
-                cy_p, cx_p = y + cell // 2, x + cell // 2
-                ys_p = np.arange(max(0, cy_p - cell), min(h, cy_p + cell))
-                xs_p = np.arange(max(0, cx_p - cell), min(w, cx_p + cell))
+                lum = (avg[0]*0.299 + avg[1]*0.587 + avg[2]*0.114) / 255.0
+                radius = int((cell / 2) * (1.0 - lum) * 1.8)
+                if radius < 1:
+                    continue
+                cy_p = y + cell // 2
+                cx_p = x + cell // 2
+                ys_p = np.arange(max(0, cy_p - radius - 1), min(h, cy_p + radius + 2))
+                xs_p = np.arange(max(0, cx_p - radius - 1), min(w, cx_p + radius + 2))
                 if len(ys_p) == 0 or len(xs_p) == 0:
                     continue
                 yy, xx = np.meshgrid(ys_p, xs_p, indexing='ij')
                 mask = (xx - cx_p)**2 + (yy - cy_p)**2 <= radius**2
-                if color_mode > 0.5:
-                    color = avg
-                else:
-                    color = np.array([0, 0, 0]) if lum < 0.5 else np.array([255, 255, 255])
-                out[yy[mask], xx[mask]] = color
+                dot_color = avg if colore > 0.5 else (np.array([0, 0, 0]) if sfondo_bianco > 0.5 else np.array([255, 255, 255]))
+                out[yy[mask], xx[mask]] = dot_color
 
         return Image.fromarray(out.astype(np.uint8))
     except Exception as e:
         st.error(f"Halftone: {e}"); return img
 
 
-def glitch_moire(img, freq1=1.0, freq2=1.0, angle=0.3):
-    """Griglie sovrapposte — pattern ottico vibrante."""
+def glitch_moire(img, freq1=0.4, freq2=0.6, angolo=0.3):
+    """Due griglie sovrapposte: interferenza ottica vibrante."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32)
         h, w, _ = arr.shape
         ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
-        a = angle * np.pi
-        f1 = 0.05 + 0.15 * freq1
-        f2 = 0.04 + 0.12 * freq2
+        a = angolo * np.pi
+        f1 = 0.03 + 0.2 * freq1
+        f2 = 0.025 + 0.18 * freq2
         grid1 = np.sin(xs * f1 * np.cos(a) + ys * f1 * np.sin(a))
-        grid2 = np.sin(xs * f2 * np.cos(a + 0.3) + ys * f2 * np.sin(a + 0.3))
+        grid2 = np.sin(xs * f2 * np.cos(a + 0.25) + ys * f2 * np.sin(a + 0.25))
         moire = ((grid1 * grid2) * 0.5 + 0.5)[:, :, np.newaxis]
         result = arr * moire + (255 - arr) * (1 - moire)
         return Image.fromarray(np.clip(result, 0, 255).astype(np.uint8))
@@ -594,151 +568,208 @@ def glitch_moire(img, freq1=1.0, freq2=1.0, angle=0.3):
         st.error(f"Moire: {e}"); return img
 
 
-def glitch_kaleidoscope(img, segments=1.0, rotation=0.0, zoom=0.5):
-    """Simmetria radiale — specchi geometrici."""
+def glitch_drip(img, soglia=0.4, separazione_rgb=0.5, asse=0.0):
+    """Pixel sort a stalattiti: segmenti contigui ordinati per luminosità + color bleed."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.uint8)
         h, w, _ = arr.shape
-        n_seg = max(2, int(2 + 10 * segments))
-        cy, cx = h / 2, w / 2
-        ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
-        dy, dx = ys - cy, xs - cx
-        angles = np.arctan2(dy, dx)
-        radii  = np.sqrt(dx**2 + dy**2)
-        seg_angle = np.pi / n_seg
-        angles_mod = angles % (2 * seg_angle)
-        angles_mod = np.where(angles_mod > seg_angle, 2 * seg_angle - angles_mod, angles_mod)
-        angles_mod += rotation * np.pi
-        scale = 0.5 + zoom
-        src_x = np.clip((cx + radii * np.cos(angles_mod) * scale).astype(int), 0, w - 1)
-        src_y = np.clip((cy + radii * np.sin(angles_mod) * scale).astype(int), 0, h - 1)
-        return Image.fromarray(arr[src_y, src_x])
+        out = arr.copy().astype(np.float32)
+        lum = 0.299 * arr[:, :, 0] + 0.587 * arr[:, :, 1] + 0.114 * arr[:, :, 2]
+        thresh = soglia * 255
+
+        # Offset cromatico per canale: crea la separazione ciano/magenta
+        # R verso sinistra, G al centro, B verso destra (o su/giù per asse V)
+        offsets = [
+            int(-separazione_rgb * 12),   # R
+            0,                             # G
+            int(separazione_rgb * 12),     # B
+        ]
+
+        vertical = asse > 0.5
+
+        for ch in range(3):
+            ch_arr = arr[:, :, ch].copy()
+            offset = offsets[ch]
+
+            if not vertical:
+                # COLONNE: ordina dall'alto verso il basso (stalattiti verticali)
+                for x in range(w):
+                    # Canale con offset orizzontale (color split)
+                    src_x = int(np.clip(x + offset, 0, w - 1))
+                    col = ch_arr[:, src_x].copy()
+                    col_lum = lum[:, src_x]
+                    y = 0
+                    while y < h:
+                        if col_lum[y] > thresh:
+                            end = y
+                            while end < h and col_lum[end] > thresh:
+                                end += 1
+                            if end - y > 1:
+                                col[y:end] = np.sort(col[y:end])  # ascendente = scuro in cima, chiaro in basso
+                            y = end
+                        else:
+                            y += 1
+                    out[:, x, ch] = col
+            else:
+                # RIGHE: ordina da sinistra a destra (stalattiti orizzontali)
+                for y in range(h):
+                    src_y = int(np.clip(y + offset, 0, h - 1))
+                    row = ch_arr[src_y, :].copy()
+                    row_lum = lum[src_y, :]
+                    x = 0
+                    while x < w:
+                        if row_lum[x] > thresh:
+                            end = x
+                            while end < w and row_lum[end] > thresh:
+                                end += 1
+                            if end - x > 1:
+                                row[x:end] = np.sort(row[x:end])
+                            x = end
+                        else:
+                            x += 1
+                    out[y, :, ch] = row
+
+        return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
     except Exception as e:
-        st.error(f"Kaleidoscope: {e}"); return img
+        st.error(f"Drip: {e}"); return img
 
 
-def glitch_oil_paint(img, radius=1.0, levels=1.0, blend=0.5):
-    """Pennellate di olio — algoritmo di Kuwahara semplificato."""
+def glitch_oil_paint(img, raggio=0.4, livelli=0.5, blend=0.7):
+    """Pennellate Kuwahara vettoriale: ogni pixel prende il colore del quadrante più omogeneo."""
     try:
-        from PIL import ImageFilter
         img = img.convert("RGB")
-        r = max(2, int(2 + 6 * radius))
-        lev = max(2, int(2 + 6 * levels))
         arr = np.array(img, dtype=np.float32)
         h, w, _ = arr.shape
-        out = arr.copy()
-        # Kuwahara: per ogni pixel sceglie il quadrante con varianza minima
-        step = max(1, r // 2)
-        for dy_off, dx_off in [(-r, -r), (-r, 0), (0, -r), (0, 0)]:
-            y0 = max(0, -dy_off); y1 = min(h, h - dy_off)
-            x0 = max(0, -dx_off); x1 = min(w, w - dx_off)
-            patch = arr[y0:y1, x0:x1]
-            var = patch.var(axis=2)
-            mean = patch.mean(axis=2, keepdims=True)
-        # Semplificato: blur progressivo + posterizzazione
-        blurred = np.array(
-            Image.fromarray(arr.astype(np.uint8)).filter(ImageFilter.GaussianBlur(r)),
-            dtype=np.float32
-        )
-        # Posterize
-        step_size = 256 / lev
-        posterized = (np.floor(blurred / step_size) * step_size).clip(0, 255)
-        result = arr * (1 - blend) + posterized * blend
+        r = max(2, int(2 + 8 * raggio))
+
+        # Kuwahara vettoriale: usa integral images per calcolare mean e var di ogni quadrante in O(h*w)
+        pad = r
+        padded = np.pad(arr, ((pad, pad), (pad, pad), (0, 0)), mode='edge')
+        # Luminosità per calcolo varianza
+        lum_pad = (padded[:,:,0]*0.299 + padded[:,:,1]*0.587 + padded[:,:,2]*0.114)
+
+        best_var = np.full((h, w), np.inf)
+        out = np.zeros_like(arr)
+
+        # 4 quadranti: (top-left, top-right, bottom-left, bottom-right) del pixel corrente
+        for (dy0, dy1, dx0, dx1) in [
+            (0,   r, 0,   r),   # top-left
+            (0,   r, r,  2*r),  # top-right
+            (r,  2*r, 0,  r),   # bottom-left
+            (r,  2*r, r, 2*r),  # bottom-right
+        ]:
+            # Estrae la finestra [dy0:dy1, dx0:dx1] intorno a ogni pixel (tramite slicing)
+            ph, pw = dy1 - dy0, dx1 - dx0
+            # Regione del padded array che corrisponde al quadrante per ogni (y,x) originale
+            win_lum   = np.lib.stride_tricks.sliding_window_view(lum_pad, (ph, pw))
+            win_color = np.lib.stride_tricks.sliding_window_view(padded,  (ph, pw, 3))
+
+            # sliding_window_view su 3D restituisce (H, W, 1, ph, pw, 3) — prendiamo [..,0,..,:]
+            win_lum   = win_lum  [dy0:dy0+h, dx0:dx0+w]            # (h, w, ph, pw)
+            win_color = win_color[dy0:dy0+h, dx0:dx0+w, 0]         # (h, w, ph, pw, 3)
+
+            var  = win_lum.var(axis=(-2, -1))                       # (h, w)
+            mean = win_color.mean(axis=(-3, -2))                    # (h, w, 3)
+
+            mask = var < best_var
+            best_var[mask] = var[mask]
+            out[mask] = mean[mask]
+
+        # Posterizzazione finale per accentuare l'effetto pittorico
+        lev = max(2, int(2 + 6 * livelli))
+        step = 256.0 / lev
+        out_post = (np.floor(out / step) * step).clip(0, 255)
+        result = arr * (1 - blend) + out_post * blend
         return Image.fromarray(result.astype(np.uint8))
     except Exception as e:
         st.error(f"Oil Paint: {e}"); return img
 
 
-def glitch_posterize(img, levels=1.0, dither=0.5, color_shift=0.3):
-    """Colori ridotti a fasce piatte — poster serigrafico."""
+def glitch_posterize(img, livelli=0.4, dither=0.4, color_shift=0.3):
+    """Riduce i colori a fasce piatte — estetica serigrafica."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32)
-        lev = max(2, int(2 + 6 * levels))
+        lev = max(2, int(2 + 6 * livelli))
         step = 256.0 / lev
-        # Dithering con rumore prima della posterizzazione
-        if dither > 0.05:
-            noise = np.random.uniform(-step * dither * 0.5, step * dither * 0.5, arr.shape)
+        if dither > 0.02:
+            noise = np.random.uniform(-step * dither * 0.6, step * dither * 0.6, arr.shape)
             arr = np.clip(arr + noise, 0, 255)
         posterized = (np.floor(arr / step) * step).clip(0, 255)
-        # Shift colore per canale
-        if color_shift > 0.05:
-            shifts = [int(color_shift * random.uniform(-20, 20)) for _ in range(3)]
-            for ch, s in enumerate(shifts):
-                posterized[:, :, ch] = np.roll(posterized[:, :, ch], s, axis=1)
+        if color_shift > 0.02:
+            s = int(color_shift * 25)
+            posterized[:, :, 0] = np.roll(posterized[:, :, 0], s, axis=1)
+            posterized[:, :, 2] = np.roll(posterized[:, :, 2], -s, axis=1)
         return Image.fromarray(posterized.astype(np.uint8))
     except Exception as e:
         st.error(f"Posterize: {e}"); return img
 
 
-def glitch_neon_glow(img, threshold=0.5, glow_width=1.0, color_mode=0.5):
-    """Bordi luminosi neon su nero — estetica cyberpunk."""
+def glitch_neon_glow(img, soglia=0.5, ampiezza=0.5, colore=0.2):
+    """Bordi luminosi neon su sfondo scuro — estetica cyberpunk."""
     try:
-        from PIL import ImageFilter
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32)
         h, w, _ = arr.shape
-        # Estrai bordi con differenza di blur
-        blur_small = np.array(Image.fromarray(arr.astype(np.uint8)).filter(ImageFilter.GaussianBlur(1)), dtype=np.float32)
-        blur_large = np.array(Image.fromarray(arr.astype(np.uint8)).filter(ImageFilter.GaussianBlur(max(2, int(2 + 6 * glow_width)))), dtype=np.float32)
-        edges = np.abs(blur_small - blur_large).mean(axis=2)
+        gw = max(2, int(1 + 8 * ampiezza))
+        blur_s = np.array(img.filter(ImageFilter.GaussianBlur(1)), dtype=np.float32)
+        blur_l = np.array(img.filter(ImageFilter.GaussianBlur(gw)), dtype=np.float32)
+        edges = np.abs(blur_s - blur_l).mean(axis=2)
         edges = edges / (edges.max() + 1e-8)
-        mask = (edges > threshold * 0.3)[:, :, np.newaxis]
-        # Colore neon
-        if color_mode < 0.25:
-            neon = np.array([0, 255, 255], dtype=np.float32)   # ciano
-        elif color_mode < 0.5:
-            neon = np.array([255, 0, 255], dtype=np.float32)   # magenta
-        elif color_mode < 0.75:
-            neon = np.array([0, 255, 0], dtype=np.float32)     # verde
-        else:
-            neon = np.array([255, 200, 0], dtype=np.float32)   # giallo
-        bg = np.zeros_like(arr)
-        glow_layer = bg + neon
-        intensity = np.clip(edges * 3, 0, 1)[:, :, np.newaxis]
-        result = arr * (1 - intensity * 0.8) + glow_layer * intensity * 0.8
-        result = np.clip(result, 0, 255)
-        return Image.fromarray(result.astype(np.uint8))
+        intensity = np.clip((edges - soglia * 0.1) * 5, 0, 1)[:, :, np.newaxis]
+
+        palettes = [
+            [0, 255, 255],    # ciano
+            [255, 0, 255],    # magenta
+            [0, 255, 0],      # verde
+            [255, 200, 0],    # giallo
+            [255, 80, 0],     # arancio
+        ]
+        idx = int(colore * (len(palettes) - 0.01))
+        neon = np.array(palettes[idx], dtype=np.float32)
+        # Sfondo scuro + bordi neon
+        dark_bg = arr * 0.15
+        result = dark_bg * (1 - intensity) + neon * intensity
+        return Image.fromarray(np.clip(result, 0, 255).astype(np.uint8))
     except Exception as e:
         st.error(f"Neon Glow: {e}"); return img
 
 
-def glitch_duotone(img, color1=0.1, color2=0.7, blend=0.8):
-    """Due colori soli — grafica contemporanea."""
+def glitch_duotone(img, colore1=0.1, colore2=0.6, blend=0.8):
+    """Due colori hue-based: ombre e luci mappate su due tinte."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32)
-        lum = (arr[:, :, 0]*0.299 + arr[:, :, 1]*0.587 + arr[:, :, 2]*0.114) / 255
-        # Genera due colori da hue
-        def hue_to_rgb(h):
+        lum = (arr[:, :, 0]*0.299 + arr[:, :, 1]*0.587 + arr[:, :, 2]*0.114) / 255.0
+
+        def hue_rgb(h):
             h = h % 1.0
-            r = abs(h * 6 - 3) - 1
-            g = 2 - abs(h * 6 - 2)
-            b = 2 - abs(h * 6 - 4)
-            return np.clip([r, g, b], 0, 1) * 255
-        c1 = hue_to_rgb(color1)
-        c2 = hue_to_rgb(color2)
+            r = np.clip(abs(h * 6 - 3) - 1, 0, 1)
+            g = np.clip(2 - abs(h * 6 - 2), 0, 1)
+            b = np.clip(2 - abs(h * 6 - 4), 0, 1)
+            return np.array([r, g, b]) * 255
+
+        c1 = hue_rgb(colore1)
+        c2 = hue_rgb(colore2)
         t = lum[:, :, np.newaxis]
-        result = c1 * (1 - t) + c2 * t
-        result = arr * (1 - blend) + result * blend
+        duotone = c1 * (1 - t) + c2 * t
+        result = arr * (1 - blend) + duotone * blend
         return Image.fromarray(np.clip(result, 0, 255).astype(np.uint8))
     except Exception as e:
         st.error(f"Duotone: {e}"); return img
 
 
-def glitch_solarize(img, threshold=0.5, strength=1.0, channel_split=0.3):
-    """Inversione alte luci — camera oscura anni '70."""
+def glitch_solarize(img, soglia=0.5, forza=0.8, channel_split=0.3):
+    """Inverte i pixel sopra soglia — estetica camera oscura."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32)
-        thresh = threshold * 255
-        mask = arr > thresh
-        inverted = arr.copy()
-        inverted[mask] = 255 - arr[mask]
-        result = arr * (1 - strength) + inverted * strength
-        if channel_split > 0.05:
-            s = int(channel_split * 20)
+        thresh = soglia * 255
+        inverted = np.where(arr > thresh, 255 - arr, arr)
+        result = arr * (1 - forza) + inverted * forza
+        if channel_split > 0.02:
+            s = int(channel_split * 25)
             result[:, :, 0] = np.roll(result[:, :, 0], s, axis=1)
             result[:, :, 2] = np.roll(result[:, :, 2], -s, axis=0)
         return Image.fromarray(np.clip(result, 0, 255).astype(np.uint8))
@@ -746,23 +777,25 @@ def glitch_solarize(img, threshold=0.5, strength=1.0, channel_split=0.3):
         st.error(f"Solarize: {e}"); return img
 
 
-def glitch_thermal(img, palette=0.5, noise=0.2, contrast=1.0):
-    """Falsi colori termografici."""
+def glitch_thermal(img, palette=0.0, rumore=0.2, contrasto=0.6):
+    """Falsi colori termografici: freddo→caldo mappato in colori."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32)
-        lum = (arr[:, :, 0]*0.299 + arr[:, :, 1]*0.587 + arr[:, :, 2]*0.114)
-        lum = lum / 255.0
-        if noise > 0.01:
-            lum = np.clip(lum + np.random.uniform(-noise*0.1, noise*0.1, lum.shape), 0, 1)
-        # Contrasto
-        lum = np.clip((lum - 0.5) * (1 + contrast) + 0.5, 0, 1)
-        # Palette termica: freddo(viola) → blu → ciano → verde → giallo → rosso → bianco
+        lum = (arr[:, :, 0]*0.299 + arr[:, :, 1]*0.587 + arr[:, :, 2]*0.114) / 255.0
+        if rumore > 0.01:
+            lum = np.clip(lum + np.random.uniform(-rumore*0.15, rumore*0.15, lum.shape), 0, 1)
+        lum = np.clip((lum - 0.5) * (1 + contrasto * 1.5) + 0.5, 0, 1)
+
         palettes = [
-            [(0.05,0,0.2),(0,0,1),(0,1,1),(0,1,0),(1,1,0),(1,0,0),(1,1,1)],
-            [(0,0,0.5),(0,0.5,1),(0,1,0.5),(0.5,1,0),(1,0.5,0),(1,0,0),(1,1,1)],
+            # Classica termica: nero→blu→ciano→verde→giallo→rosso→bianco
+            [(0,0,0),(0,0,1),(0,1,1),(0,1,0),(1,1,0),(1,0,0),(1,1,1)],
+            # Infrarosso: viola→blu→verde→giallo→bianco
+            [(0.2,0,0.4),(0,0,1),(0,0.8,0.2),(1,1,0),(1,1,1)],
+            # Calore: nero→rosso→arancio→giallo→bianco
+            [(0,0,0),(0.6,0,0),(1,0.3,0),(1,1,0),(1,1,1)],
         ]
-        pal = palettes[int(palette > 0.5)]
+        pal = palettes[int(palette * (len(palettes) - 0.01))]
         n = len(pal) - 1
         t = lum * n
         idx = np.clip(t.astype(int), 0, n - 1)
@@ -775,7 +808,7 @@ def glitch_thermal(img, palette=0.5, noise=0.2, contrast=1.0):
         st.error(f"Thermal: {e}"); return img
 
 
-def glitch_polar(img, strength=1.0, rotation=0.0, zoom=0.5):
+def glitch_polar(img, forza=0.6, rotazione=0.0, zoom=0.5):
     """Coordinate polari — immagine avvolta su se stessa."""
     try:
         img = img.convert("RGB")
@@ -783,73 +816,65 @@ def glitch_polar(img, strength=1.0, rotation=0.0, zoom=0.5):
         h, w, _ = arr.shape
         cy, cx = h / 2, w / 2
         ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
-        # Mappa polare → cartesiana
-        norm_x = (xs / w - 0.5) * 2
-        norm_y = (ys / h - 0.5) * 2
-        radius = np.sqrt(norm_x**2 + norm_y**2)
-        angle  = np.arctan2(norm_y, norm_x) + rotation * np.pi
-        # Coordinate sorgente in spazio polare
-        scale = 0.3 + 0.7 * zoom
-        src_x = np.clip(((angle / (2 * np.pi) + 0.5) * w * scale).astype(int) % w, 0, w - 1)
-        src_y = np.clip((radius * h * strength * 0.6).astype(int), 0, h - 1)
-        warped = arr[src_y, src_x]
-        # Blend con originale ai bordi
-        blend = np.clip(radius, 0, 1)[:, :, np.newaxis]
-        result = (arr * (1 - blend * strength) + warped * blend * strength).astype(np.uint8)
-        return Image.fromarray(result)
+        nx = (xs / w - 0.5) * 2
+        ny = (ys / h - 0.5) * 2
+        r = np.sqrt(nx**2 + ny**2) * (0.5 + zoom)
+        angle = np.arctan2(ny, nx) + rotazione * np.pi
+        px = np.clip(((angle / (2 * np.pi) + 0.5) * w * forza + w * (1 - forza) * 0.5).astype(int), 0, w - 1)
+        py = np.clip((r * h * 0.8).astype(int), 0, h - 1)
+        return Image.fromarray(arr[py, px])
     except Exception as e:
         st.error(f"Polar: {e}"); return img
 
 
-def glitch_tunnel_zoom(img, layers=1.0, speed=0.5, color_shift=0.3):
-    """Zoom concentrico infinito — tunnel visivo."""
+def glitch_tunnel_zoom(img, strati=0.5, velocita=0.5, color_shift=0.3):
+    """Zoom a tunnel: strati concentrici con color shift progressivo."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32)
         h, w, _ = arr.shape
-        n_layers = int(3 + 7 * layers)
+        n = int(3 + 7 * strati)
         accumulated = np.zeros_like(arr)
-        total_weight = 0
-        for i in range(n_layers):
-            scale = 1.0 / (1.3 + i * 0.4 * speed)
-            new_h = max(4, int(h * scale))
-            new_w = max(4, int(w * scale))
+        total_w = 0.0
+
+        for i in range(n):
+            scale = 1.0 / (1.2 + i * 0.5 * velocita)
+            nw = max(4, int(w * scale))
+            nh = max(4, int(h * scale))
             small = np.array(
-                Image.fromarray(arr.astype(np.uint8)).resize((new_w, new_h), Image.BILINEAR),
+                Image.fromarray(arr.astype(np.uint8)).resize((nw, nh), Image.BILINEAR),
                 dtype=np.float32
             )
-            # Centra
-            pad_y = (h - new_h) // 2
-            pad_x = (w - new_w) // 2
             layer = np.zeros_like(arr)
-            layer[pad_y:pad_y+new_h, pad_x:pad_x+new_w] = small
-            # Color shift per strato
-            if color_shift > 0.05:
-                s = int(i * color_shift * 5)
+            py = (h - nh) // 2
+            px = (w - nw) // 2
+            layer[py:py+nh, px:px+nw] = small
+            if color_shift > 0.02:
+                s = int(i * color_shift * 6)
                 layer[:, :, 0] = np.roll(layer[:, :, 0], s, axis=1)
                 layer[:, :, 2] = np.roll(layer[:, :, 2], -s, axis=1)
-            w_layer = 1.0 / (i + 1)
-            accumulated += layer * w_layer
-            total_weight += w_layer
-        result = accumulated / total_weight
-        return Image.fromarray(np.clip(result, 0, 255).astype(np.uint8))
+            wt = 1.0 / (i + 1)
+            accumulated += layer * wt
+            total_w += wt
+
+        return Image.fromarray(np.clip(accumulated / total_w, 0, 255).astype(np.uint8))
     except Exception as e:
         st.error(f"Tunnel Zoom: {e}"); return img
 
 
-def glitch_mirror_kaleidoscope(img, mirrors=0.5, rotation=0.0, zoom=0.5):
-    """4/6/8 specchi radiali — simmetria perfetta."""
+def glitch_mirror_kaleidoscope(img, specchi=0.3, rotazione=0.0, zoom=0.5):
+    """4/6/8 specchi radiali — simmetria pura."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.uint8)
         h, w, _ = arr.shape
-        n_mirrors = 4 if mirrors < 0.33 else (6 if mirrors < 0.66 else 8)
+        n_m = 4 if specchi < 0.33 else (6 if specchi < 0.66 else 8)
         cy, cx = h / 2, w / 2
         ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
         dy, dx = ys - cy, xs - cx
-        angles = np.arctan2(dy, dx) + rotation * np.pi
-        radii  = np.sqrt(dx**2 + dy**2)
-        seg = np.pi / n_mirrors
+        angles = np.arctan2(dy, dx) + rotazione * np.pi
+        radii = np.sqrt(dx**2 + dy**2)
+        seg = np.pi / n_m
         angles_mod = angles % (2 * seg)
         angles_mod = np.where(angles_mod > seg, 2 * seg - angles_mod, angles_mod)
         scale = 0.4 + 0.8 * zoom
@@ -860,132 +885,60 @@ def glitch_mirror_kaleidoscope(img, mirrors=0.5, rotation=0.0, zoom=0.5):
         st.error(f"Mirror Kaleidoscope: {e}"); return img
 
 
-def glitch_crosshatch(img, density=0.5, angle=0.3, thickness=0.3):
-    """Tratteggi incrociati — incisione su rame."""
+def glitch_crosshatch(img, densita=0.5, angolo=0.3, spessore=0.3):
+    """Tratteggi incrociati — intensità proporzionale alle zone scure."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32)
         h, w, _ = arr.shape
-        lum = (arr[:, :, 0]*0.299 + arr[:, :, 1]*0.587 + arr[:, :, 2]*0.114) / 255
-        spacing = max(2, int(3 + 10 * (1 - density)))
-        thick = max(1, int(1 + 2 * thickness))
-        a = angle * np.pi * 0.5
+        lum = (arr[:, :, 0]*0.299 + arr[:, :, 1]*0.587 + arr[:, :, 2]*0.114) / 255.0
+        spacing = max(2, int(2 + 12 * (1 - densita)))
+        thick = max(1, int(1 + 3 * spessore))
+        a = angolo * np.pi * 0.5
         out = np.ones((h, w, 3), dtype=np.float32) * 255
         ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
-        # Primo set di linee
         line1 = (xs * np.cos(a) + ys * np.sin(a)) % spacing
-        # Secondo set perpendicolare
         line2 = (xs * np.cos(a + np.pi/2) + ys * np.sin(a + np.pi/2)) % spacing
-        dark = lum < 0.5
-        medium = (lum >= 0.5) & (lum < 0.75)
+        line3 = (xs * np.cos(a + np.pi/4) + ys * np.sin(a + np.pi/4)) % (spacing * 1.5)
         hatch1 = line1 < thick
         hatch2 = line2 < thick
-        # Zone scure: doppio tratteggio
-        mask_dark = dark & (hatch1 | hatch2)
-        # Zone medie: tratteggio singolo
-        mask_med = medium & hatch1
-        out[mask_dark] = arr[mask_dark] * 0.1
-        out[mask_med]  = arr[mask_med] * 0.3
+        hatch3 = line3 < thick
+        # Zone molto scure: 3 direzioni
+        very_dark = lum < 0.25
+        dark = (lum >= 0.25) & (lum < 0.5)
+        medium = (lum >= 0.5) & (lum < 0.75)
+        out[very_dark & (hatch1 | hatch2 | hatch3)] = arr[very_dark & (hatch1 | hatch2 | hatch3)] * 0.05
+        out[dark & (hatch1 | hatch2)] = arr[dark & (hatch1 | hatch2)] * 0.1
+        out[medium & hatch1] = arr[medium & hatch1] * 0.3
         return Image.fromarray(out.astype(np.uint8))
     except Exception as e:
         st.error(f"Crosshatch: {e}"); return img
 
 
-def glitch_drip(img, direction=0.0, threshold=0.5, color_split=0.5):
-    """Pixel sort a colata — stalattiti cromatiche in 4 direzioni."""
-    try:
-        img = img.convert("RGB")
-        arr = np.array(img, dtype=np.uint8)
-        h, w, _ = arr.shape
-        out = arr.copy()
-
-        # direction: 0=giù, 0.25=su, 0.5=destra, 0.75=sinistra (con gradazioni diagonali intermedie)
-        dir_idx = int(direction * 4) % 4   # 0 down, 1 up, 2 right, 3 left
-        diag_blend = (direction * 4) % 1   # 0..1 quanto mescolare con la direzione successiva
-
-        thresh_val = threshold * 255
-
-        def sort_channel(ch_arr, axis, reverse=False):
-            """Ordina lungo un asse solo dove luminosità supera soglia."""
-            out_ch = ch_arr.copy()
-            lum = (arr[:, :, 0] * 0.299 + arr[:, :, 1] * 0.587 + arr[:, :, 2] * 0.114)
-            if axis == 0:  # colonne (up/down)
-                for x in range(w):
-                    col = ch_arr[:, x]
-                    mask = lum[:, x] > thresh_val
-                    if mask.sum() < 2:
-                        continue
-                    idx = np.where(mask)[0]
-                    # trova segmenti contigui
-                    sorted_seg = np.sort(col[idx])[::-1] if reverse else np.sort(col[idx])
-                    out_ch[idx, x] = sorted_seg
-            else:          # righe (left/right)
-                for y in range(h):
-                    row = ch_arr[y, :]
-                    mask = lum[y, :] > thresh_val
-                    if mask.sum() < 2:
-                        continue
-                    idx = np.where(mask)[0]
-                    sorted_seg = np.sort(row[idx])[::-1] if reverse else np.sort(row[idx])
-                    out_ch[y, idx] = sorted_seg
-            return out_ch
-
-        configs = [
-            (0, False),   # down
-            (0, True),    # up
-            (1, False),   # right
-            (1, True),    # left
-        ]
-        ax, rev = configs[dir_idx]
-        ax2, rev2 = configs[(dir_idx + 1) % 4]
-
-        # Color split: ogni canale shiftato leggermente in direzione diversa
-        split = color_split
-        for ch in range(3):
-            ch_data = arr[:, :, ch]
-            # Applica sort primario
-            sorted1 = sort_channel(ch_data, ax, rev)
-            if diag_blend > 0.05:
-                sorted2 = sort_channel(ch_data, ax2, rev2)
-                sorted1 = (sorted1 * (1 - diag_blend) + sorted2 * diag_blend).astype(np.uint8)
-            # Color bleed: R verso destra, B verso sinistra, G invariato
-            if split > 0.05:
-                shift = int(split * 20) * (ch - 1)   # R=-20..0, G=0, B=0..20
-                if ax == 0:
-                    sorted1 = np.roll(sorted1, shift, axis=1)
-                else:
-                    sorted1 = np.roll(sorted1, shift, axis=0)
-            out[:, :, ch] = sorted1
-
-        return Image.fromarray(out)
-    except Exception as e:
-        st.error(f"Drip: {e}"); return img
-
-
-def glitch_stippling(img, density=0.5, dot_size=0.5, color_mode=0.5):
-    """Puntinismo digitale — nuvole di punti."""
+def glitch_stippling(img, densita=0.5, dim_punto=0.4, colore=0.6):
+    """Puntinismo: punti concentrati nelle zone scure."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.float32)
         h, w, _ = arr.shape
-        lum = (arr[:, :, 0]*0.299 + arr[:, :, 1]*0.587 + arr[:, :, 2]*0.114) / 255
-        out = np.ones((h, w, 3), dtype=np.float32) * 255
-        # Numero di punti proporzionale alla densità e alle zone scure
-        n_dots = int(w * h * 0.02 * density)
-        max_r = max(1, int(1 + 3 * dot_size))
-        # Campionamento pesato per luminosità (zone scure = più punti)
-        prob = 1 - lum
+        lum = (arr[:, :, 0]*0.299 + arr[:, :, 1]*0.587 + arr[:, :, 2]*0.114) / 255.0
+        bg = 255.0 if colore < 0.5 else 0.0
+        out = np.full((h, w, 3), bg, dtype=np.float32)
+        n_dots = int(w * h * 0.025 * densita)
+        max_r = max(1, int(1 + 4 * dim_punto))
+        prob = 1.0 - lum
+        prob = np.clip(prob, 0.001, None)
         prob = prob / prob.sum()
         flat_idx = np.random.choice(h * w, size=min(n_dots, h * w), replace=False, p=prob.ravel())
-        ys_dots = flat_idx // w
-        xs_dots = flat_idx % w
-        for i in range(len(ys_dots)):
-            y, x = ys_dots[i], xs_dots[i]
+        ys_d = flat_idx // w
+        xs_d = flat_idx % w
+        for i in range(len(ys_d)):
+            y, x = ys_d[i], xs_d[i]
             r = random.randint(1, max_r)
             y0, y1 = max(0, y-r), min(h, y+r+1)
             x0, x1 = max(0, x-r), min(w, x+r+1)
-            color = arr[y, x] if color_mode > 0.5 else np.array([0, 0, 0])
-            out[y0:y1, x0:x1] = color
+            dot_color = arr[y, x] if colore > 0.5 else (np.array([0.0, 0.0, 0.0]) if bg > 128 else np.array([255.0, 255.0, 255.0]))
+            out[y0:y1, x0:x1] = dot_color
         return Image.fromarray(out.astype(np.uint8))
     except Exception as e:
         st.error(f"Stippling: {e}"); return img
@@ -993,154 +946,153 @@ def glitch_stippling(img, density=0.5, dot_size=0.5, color_mode=0.5):
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  CATALOGO EFFETTI
-#  Ogni entry: (chiave, label_ui, emoji, funzione, [(label_slider, min, max, default, step, key)])
 # ══════════════════════════════════════════════════════════════════════════════
 
 EFFECTS = [
     ("vhs", "VHS", "📺", glitch_vhs, [
-        ("Intensità",      0.0, 2.0, 1.0, 0.1, "vhs_int"),
-        ("Scanlines",      0.0, 2.0, 1.0, 0.1, "vhs_scan"),
-        ("Color Split",    0.0, 2.0, 1.0, 0.1, "vhs_col"),
+        ("Intensità",      0.0, 2.0, 1.0, 0.1,  "vhs_int"),
+        ("Scanlines",      0.0, 2.0, 1.0, 0.1,  "vhs_scan"),
+        ("Color Split",    0.0, 2.0, 1.0, 0.1,  "vhs_col"),
     ]),
     ("distruttivo", "Distruttivo", "💥", glitch_distruttivo, [
-        ("Dim. Blocchi",   0.0, 2.0, 1.0, 0.1, "dest_size"),
-        ("Num. Blocchi",   0.0, 2.0, 1.0, 0.1, "dest_num"),
-        ("Spostamento",    0.0, 2.0, 1.0, 0.1, "dest_disp"),
+        ("Dim. Blocchi",   0.0, 2.0, 1.0, 0.1,  "dest_size"),
+        ("Num. Blocchi",   0.0, 2.0, 1.0, 0.1,  "dest_num"),
+        ("Spostamento",    0.0, 2.0, 1.0, 0.1,  "dest_disp"),
     ]),
     ("noise", "Noise", "🌀", glitch_noise, [
-        ("Intensità",      0.0, 2.0, 1.0, 0.1, "noise_int"),
-        ("Copertura",      0.0, 2.0, 1.0, 0.1, "noise_cov"),
-        ("Caos",           0.0, 1.0, 0.5, 0.1, "noise_chaos"),
+        ("Intensità",      0.0, 2.0, 1.0, 0.1,  "noise_int"),
+        ("Copertura",      0.0, 1.0, 0.7, 0.05, "noise_cov"),
+        ("Tipo (0=bande 0.5=pixel 1=onde)", 0.0, 1.0, 0.0, 0.01, "noise_tipo"),
     ]),
     ("pixel_sort", "Pixel Sort", "🔀", glitch_pixel_sort, [
-        ("Soglia",         0.0, 1.0, 0.5, 0.05, "ps_thresh"),
-        ("Direzione",      0.0, 1.0, 0.3, 0.1,  "ps_dir"),
-        ("Forza",          0.0, 1.0, 0.7, 0.05, "ps_strength"),
+        ("Soglia lum.",    0.0, 1.0, 0.4, 0.05, "ps_thresh"),
+        ("Asse (0=H 1=V)", 0.0, 1.0, 1.0, 1.0,  "ps_asse"),
+        ("Span max",       0.0, 1.0, 0.8, 0.05, "ps_span"),
     ]),
     ("wave_warp", "Wave Warp", "〰️", glitch_wave_warp, [
-        ("Ampiezza",       0.0, 2.0, 1.0, 0.1, "ww_amp"),
-        ("Frequenza",      0.0, 2.0, 1.0, 0.1, "ww_freq"),
-        ("Asse",           0.0, 1.0, 0.5, 0.1, "ww_axis"),
+        ("Ampiezza",       0.0, 2.0, 1.0, 0.1,  "ww_amp"),
+        ("Frequenza",      0.0, 2.0, 1.0, 0.1,  "ww_freq"),
+        ("Asse (0=H 1=V)", 0.0, 1.0, 0.0, 1.0,  "ww_asse"),
     ]),
     ("chromatic", "Chromatic Ab.", "🌈", glitch_chromatic, [
-        ("Raggio",         0.0, 2.0, 1.0, 0.1, "chr_rad"),
-        ("Angolo",         0.0, 1.0, 0.3, 0.05,"chr_ang"),
-        ("Forza",          0.0, 2.0, 1.0, 0.1, "chr_str"),
+        ("Forza",          0.0, 1.0, 0.5, 0.05, "chr_forza"),
+        ("Angolo",         0.0, 1.0, 0.0, 0.05, "chr_ang"),
+        ("Zoom aberr.",    0.0, 1.0, 0.3, 0.05, "chr_zoom"),
     ]),
     ("datamosh", "Datamosh", "📼", glitch_datamosh, [
-        ("Dim. Blocchi",   0.0, 2.0, 1.0, 0.1, "dm_block"),
-        ("Decay",          0.0, 1.0, 0.5, 0.05,"dm_decay"),
-        ("N. Frame",       0.0, 1.0, 0.5, 0.05,"dm_frames"),
+        ("Dim. Blocchi",   0.0, 2.0, 1.0, 0.1,  "dm_block"),
+        ("Decay",          0.0, 1.0, 0.5, 0.05, "dm_decay"),
+        ("N. Blocchi",     0.0, 1.0, 0.5, 0.05, "dm_num"),
     ]),
     ("scanline_burn", "Scanline Burn", "📟", glitch_scanline_burn, [
-        ("Intensità",      0.0, 2.0, 1.0, 0.1, "sb_int"),
-        ("Densità",        0.0, 1.0, 0.4, 0.05,"sb_den"),
-        ("Color Bleed",    0.0, 1.0, 0.5, 0.05,"sb_bleed"),
+        ("Intensità",      0.0, 2.0, 1.0, 0.1,  "sb_int"),
+        ("Densità",        0.0, 1.0, 0.4, 0.05, "sb_den"),
+        ("Color Bleed",    0.0, 1.0, 0.5, 0.05, "sb_bleed"),
     ]),
     ("psychedelic", "Psychedelic", "🔮", glitch_psychedelic, [
-        ("Hue Shift",      0.0, 1.0, 0.3, 0.05,"psy_hue"),
-        ("Saturazione",    0.0, 1.0, 0.5, 0.05,"psy_sat"),
-        ("Inversione",     0.0, 1.0, 0.0, 0.1, "psy_inv"),
+        ("Hue Shift",      0.0, 1.0, 0.3, 0.05, "psy_hue"),
+        ("Saturazione",    0.0, 1.0, 0.5, 0.05, "psy_sat"),
+        ("Inversione",     0.0, 1.0, 0.0, 0.05, "psy_inv"),
     ]),
     ("channel_swap", "Channel Swap", "🔁", glitch_channel_swap, [
-        ("Modalità",       0.0, 1.0, 0.3, 0.1, "cs_mode"),
-        ("Intensità",      0.0, 1.0, 0.7, 0.05,"cs_int"),
-        ("Blend",          0.0, 1.0, 0.6, 0.05,"cs_blend"),
+        ("Modalità (0-5)", 0.0, 1.0, 0.0, 0.2,  "cs_mode"),
+        ("Blend",          0.0, 1.0, 0.6, 0.05, "cs_blend"),
+        ("Shift px",       0.0, 1.0, 0.0, 0.05, "cs_shift"),
     ]),
-    ("image_feedback", "Image Feedback", "🔁🔁", glitch_image_feedback, [
-        ("Zoom",           0.0, 1.0, 0.5, 0.05,"fb_zoom"),
-        ("Iterazioni",     0.0, 1.0, 0.4, 0.05,"fb_iter"),
-        ("Decay",          0.0, 1.0, 0.5, 0.05,"fb_decay"),
+    ("image_feedback", "Image Feedback", "📡🔁", glitch_image_feedback, [
+        ("Zoom",           0.0, 1.0, 0.5, 0.05, "fb_zoom"),
+        ("Iterazioni",     0.0, 1.0, 0.4, 0.05, "fb_iter"),
+        ("Decay",          0.0, 1.0, 0.5, 0.05, "fb_decay"),
     ]),
     ("destruction_art", "Destruction Art", "✂️", glitch_destruction_art, [
-        ("Tagli",          0.0, 1.0, 0.5, 0.05,"da_cuts"),
-        ("Scatter",        0.0, 1.0, 0.4, 0.05,"da_scatter"),
-        ("Color Shift",    0.0, 1.0, 0.5, 0.05,"da_color"),
+        ("Tagli",          0.0, 1.0, 0.5, 0.05, "da_cuts"),
+        ("Scatter",        0.0, 1.0, 0.4, 0.05, "da_scatter"),
+        ("Asse (0=H 1=V)", 0.0, 1.0, 0.0, 1.0,  "da_asse"),
     ]),
-    ("analogic", "Glitch Analogic", "📡", glitch_analogic, [
-        ("Sync Loss",      0.0, 1.0, 0.5, 0.05,"ag_sync"),
-        ("Color Bleed",    0.0, 1.0, 0.4, 0.05,"ag_bleed"),
-        ("Static",         0.0, 1.0, 0.3, 0.05,"ag_static"),
+    ("analogic", "Glitch Analogic", "📻", glitch_analogic, [
+        ("Sync Loss",      0.0, 1.0, 0.5, 0.05, "ag_sync"),
+        ("Color Bleed",    0.0, 1.0, 0.4, 0.05, "ag_bleed"),
+        ("Static",         0.0, 1.0, 0.3, 0.05, "ag_static"),
     ]),
     ("displacement_map", "Displacement Map", "🌊", glitch_displacement_map, [
-        ("Forza",          0.0, 1.0, 0.5, 0.05,"dsp_strength"),
-        ("Scala Blur",     0.0, 1.0, 0.4, 0.05,"dsp_scale"),
-        ("Canale Mappa",   0.0, 1.0, 0.3, 0.05,"dsp_channel"),
+        ("Forza",          0.0, 1.0, 0.5, 0.05, "dsp_forza"),
+        ("Blur Scala",     0.0, 1.0, 0.4, 0.05, "dsp_blur"),
+        ("Canale (R/G/B)", 0.0, 1.0, 0.0, 0.5,  "dsp_canale"),
     ]),
     ("op_art_circles", "Op Art Circles", "⭕", glitch_op_art_circles, [
-        ("Frequenza",      0.0, 1.0, 0.5, 0.05,"oa_freq"),
-        ("Contrasto",      0.0, 1.0, 0.6, 0.05,"oa_cont"),
-        ("Blend",          0.0, 1.0, 0.5, 0.05,"oa_blend"),
+        ("Frequenza",      0.0, 1.0, 0.5, 0.05, "oa_freq"),
+        ("Contrasto",      0.0, 1.0, 0.6, 0.05, "oa_cont"),
+        ("Blend",          0.0, 1.0, 0.5, 0.05, "oa_blend"),
     ]),
     ("halftone", "Halftone", "🔵", glitch_halftone, [
-        ("Dim. Punto",     0.0, 1.0, 0.4, 0.05,"ht_size"),
-        ("Angolo",         0.0, 1.0, 0.3, 0.05,"ht_angle"),
-        ("Colore",         0.0, 1.0, 0.7, 0.05,"ht_color"),
+        ("Dim. Punto",     0.0, 1.0, 0.4, 0.05, "ht_size"),
+        ("Sfondo bianco",  0.0, 1.0, 1.0, 1.0,  "ht_sfondo"),
+        ("Colore",         0.0, 1.0, 0.7, 0.05, "ht_color"),
     ]),
     ("moire", "Moire Pattern", "🔲", glitch_moire, [
-        ("Frequenza 1",    0.0, 1.0, 0.4, 0.05,"mo_f1"),
-        ("Frequenza 2",    0.0, 1.0, 0.6, 0.05,"mo_f2"),
-        ("Angolo",         0.0, 1.0, 0.3, 0.05,"mo_ang"),
+        ("Frequenza 1",    0.0, 1.0, 0.4, 0.05, "mo_f1"),
+        ("Frequenza 2",    0.0, 1.0, 0.6, 0.05, "mo_f2"),
+        ("Angolo",         0.0, 1.0, 0.3, 0.05, "mo_ang"),
     ]),
     ("drip", "Drip Sort", "🌊💧", glitch_drip, [
-        ("Direzione",      0.0, 1.0, 0.0, 0.05, "drip_dir"),
-        ("Soglia",         0.0, 1.0, 0.4, 0.05, "drip_thresh"),
-        ("Color Split",    0.0, 1.0, 0.4, 0.05, "drip_col"),
+        ("Soglia lum.",    0.0, 1.0, 0.3, 0.05, "drip_soglia"),
+        ("Sep. RGB",       0.0, 1.0, 0.5, 0.05, "drip_rgb"),
+        ("Asse (0=V 1=H)", 0.0, 1.0, 0.0, 1.0,  "drip_asse"),
     ]),
     ("oil_paint", "Oil Paint", "🖌️", glitch_oil_paint, [
-        ("Raggio",         0.0, 1.0, 0.4, 0.05,"op_rad"),
-        ("Livelli",        0.0, 1.0, 0.5, 0.05,"op_lev"),
-        ("Blend",          0.0, 1.0, 0.7, 0.05,"op_blend"),
+        ("Raggio",         0.0, 1.0, 0.3, 0.05, "op_rad"),
+        ("Livelli",        0.0, 1.0, 0.5, 0.05, "op_lev"),
+        ("Blend",          0.0, 1.0, 0.7, 0.05, "op_blend"),
     ]),
     ("posterize", "Posterize", "🎨", glitch_posterize, [
-        ("Livelli",        0.0, 1.0, 0.4, 0.05,"po_lev"),
-        ("Dither",         0.0, 1.0, 0.4, 0.05,"po_dith"),
-        ("Color Shift",    0.0, 1.0, 0.3, 0.05,"po_col"),
+        ("Livelli",        0.0, 1.0, 0.4, 0.05, "po_lev"),
+        ("Dither",         0.0, 1.0, 0.4, 0.05, "po_dith"),
+        ("Color Shift",    0.0, 1.0, 0.3, 0.05, "po_col"),
     ]),
     ("neon_glow", "Neon Glow", "💡", glitch_neon_glow, [
-        ("Soglia",         0.0, 1.0, 0.5, 0.05,"ng_thresh"),
-        ("Ampiezza",       0.0, 1.0, 0.5, 0.05,"ng_width"),
-        ("Colore",         0.0, 1.0, 0.2, 0.05,"ng_color"),
+        ("Soglia bordi",   0.0, 1.0, 0.3, 0.05, "ng_thresh"),
+        ("Ampiezza glow",  0.0, 1.0, 0.5, 0.05, "ng_width"),
+        ("Colore (0-4)",   0.0, 1.0, 0.0, 0.25, "ng_color"),
     ]),
     ("duotone", "Duotone", "🎭", glitch_duotone, [
-        ("Colore 1",       0.0, 1.0, 0.1, 0.05,"dt_c1"),
-        ("Colore 2",       0.0, 1.0, 0.6, 0.05,"dt_c2"),
-        ("Blend",          0.0, 1.0, 0.8, 0.05,"dt_blend"),
+        ("Colore 1 (hue)", 0.0, 1.0, 0.1, 0.05, "dt_c1"),
+        ("Colore 2 (hue)", 0.0, 1.0, 0.6, 0.05, "dt_c2"),
+        ("Blend",          0.0, 1.0, 0.8, 0.05, "dt_blend"),
     ]),
     ("solarize", "Solarize", "☀️", glitch_solarize, [
-        ("Soglia",         0.0, 1.0, 0.5, 0.05,"sol_thresh"),
-        ("Forza",          0.0, 1.0, 0.8, 0.05,"sol_str"),
-        ("Channel Split",  0.0, 1.0, 0.3, 0.05,"sol_ch"),
+        ("Soglia",         0.0, 1.0, 0.5, 0.05, "sol_thresh"),
+        ("Forza",          0.0, 1.0, 0.8, 0.05, "sol_str"),
+        ("Channel Split",  0.0, 1.0, 0.3, 0.05, "sol_ch"),
     ]),
     ("thermal", "Thermal Camera", "🌡️", glitch_thermal, [
-        ("Palette",        0.0, 1.0, 0.3, 0.05,"th_pal"),
-        ("Rumore",         0.0, 1.0, 0.2, 0.05,"th_noise"),
-        ("Contrasto",      0.0, 1.0, 0.6, 0.05,"th_cont"),
+        ("Palette (0-2)",  0.0, 1.0, 0.0, 0.5,  "th_pal"),
+        ("Rumore",         0.0, 1.0, 0.2, 0.05, "th_noise"),
+        ("Contrasto",      0.0, 1.0, 0.6, 0.05, "th_cont"),
     ]),
     ("polar", "Polar Coords", "🌀", glitch_polar, [
-        ("Forza",          0.0, 1.0, 0.6, 0.05,"pol_str"),
-        ("Rotazione",      0.0, 1.0, 0.0, 0.05,"pol_rot"),
-        ("Zoom",           0.0, 1.0, 0.5, 0.05,"pol_zoom"),
+        ("Forza",          0.0, 1.0, 0.6, 0.05, "pol_str"),
+        ("Rotazione",      0.0, 1.0, 0.0, 0.05, "pol_rot"),
+        ("Zoom",           0.0, 1.0, 0.5, 0.05, "pol_zoom"),
     ]),
     ("tunnel_zoom", "Tunnel Zoom", "🔭", glitch_tunnel_zoom, [
-        ("Strati",         0.0, 1.0, 0.5, 0.05,"tz_layers"),
-        ("Velocità",       0.0, 1.0, 0.5, 0.05,"tz_speed"),
-        ("Color Shift",    0.0, 1.0, 0.3, 0.05,"tz_col"),
+        ("Strati",         0.0, 1.0, 0.5, 0.05, "tz_layers"),
+        ("Velocità",       0.0, 1.0, 0.5, 0.05, "tz_speed"),
+        ("Color Shift",    0.0, 1.0, 0.3, 0.05, "tz_col"),
     ]),
     ("mirror_kal", "Mirror Kaleido.", "🪞", glitch_mirror_kaleidoscope, [
-        ("Specchi",        0.0, 1.0, 0.3, 0.1, "mk_mirrors"),
-        ("Rotazione",      0.0, 1.0, 0.0, 0.05,"mk_rot"),
-        ("Zoom",           0.0, 1.0, 0.5, 0.05,"mk_zoom"),
+        ("Specchi (4/6/8)", 0.0, 1.0, 0.3, 0.1,  "mk_mirrors"),
+        ("Rotazione",       0.0, 1.0, 0.0, 0.05, "mk_rot"),
+        ("Zoom",            0.0, 1.0, 0.5, 0.05, "mk_zoom"),
     ]),
     ("crosshatch", "Crosshatch", "✏️", glitch_crosshatch, [
-        ("Densità",        0.0, 1.0, 0.5, 0.05,"ch_den"),
-        ("Angolo",         0.0, 1.0, 0.3, 0.05,"ch_ang"),
-        ("Spessore",       0.0, 1.0, 0.3, 0.05,"ch_thick"),
+        ("Densità",        0.0, 1.0, 0.5, 0.05, "ch_den"),
+        ("Angolo",         0.0, 1.0, 0.3, 0.05, "ch_ang"),
+        ("Spessore",       0.0, 1.0, 0.3, 0.05, "ch_thick"),
     ]),
     ("stippling", "Stippling", "🔴", glitch_stippling, [
-        ("Densità",        0.0, 1.0, 0.5, 0.05,"st_den"),
-        ("Dim. Punto",     0.0, 1.0, 0.4, 0.05,"st_dot"),
-        ("Colore",         0.0, 1.0, 0.6, 0.05,"st_col"),
+        ("Densità",        0.0, 1.0, 0.5, 0.05, "st_den"),
+        ("Dim. Punto",     0.0, 1.0, 0.4, 0.05, "st_dot"),
+        ("Colore",         0.0, 1.0, 0.6, 0.05, "st_col"),
     ]),
 ]
 
@@ -1150,24 +1102,24 @@ EFFECTS = [
 # ══════════════════════════════════════════════════════════════════════════════
 
 EFFECT_QUOTES = {
-    "vhs":            "Il nastro ha consumato i colori. La memoria e' distorta.",
-    "distruttivo":    "I blocchi si sono spostati. La struttura non esiste piu'.",
-    "noise":          "Il segnale e' collassato. Il rumore ha preso il controllo.",
-    "pixel_sort":     "La luce ha scelto il suo ordine. Il pixel ha obbedito.",
-    "wave_warp":      "La materia e' diventata liquida. La forma e' un'illusione.",
-    "chromatic":      "Il prisma ha spezzato la luce. I colori non tornano piu'.",
-    "datamosh":       "Il frame e' rimasto bloccato. Il tempo non scorre piu'.",
-    "scanline_burn":  "Il tubo e' bruciato. Il CRT ricorda ancora.",
-    "psychedelic":    "L'hue ha ruotato oltre il visibile. La realta' e' soggettiva.",
-    "channel_swap":   "I canali si sono scambiati. Il colore non riconosce se stesso.",
-    "image_feedback": "Lo schermo si e' guardato allo specchio. L'infinito e' iniziato.",
-    "destruction_art":"L'immagine e' stata tagliata. Il collage e' l'unica verita'.",
-    "analogic":       "Il segnale ha perso il sincronismo. L'antenna non risponde.",
+    "vhs":              "Il nastro ha consumato i colori. La memoria e' distorta.",
+    "distruttivo":      "I blocchi si sono spostati. La struttura non esiste piu'.",
+    "noise":            "Il segnale e' collassato. Il rumore ha preso il controllo.",
+    "pixel_sort":       "La luce ha scelto il suo ordine. Il pixel ha obbedito.",
+    "wave_warp":        "La materia e' diventata liquida. La forma e' un'illusione.",
+    "chromatic":        "Il prisma ha spezzato la luce. I colori non tornano piu'.",
+    "datamosh":         "Il frame e' rimasto bloccato. Il tempo non scorre piu'.",
+    "scanline_burn":    "Il tubo e' bruciato. Il CRT ricorda ancora.",
+    "psychedelic":      "L'hue ha ruotato oltre il visibile. La realta' e' soggettiva.",
+    "channel_swap":     "I canali si sono scambiati. Il colore non riconosce se stesso.",
+    "image_feedback":   "Lo schermo si e' guardato allo specchio. L'infinito e' iniziato.",
+    "destruction_art":  "L'immagine e' stata tagliata. Il collage e' l'unica verita'.",
+    "analogic":         "Il segnale ha perso il sincronismo. L'antenna non risponde.",
     "displacement_map": "Il pixel si e' spostato seguendo se stesso. Lo spazio e' curvo.",
     "op_art_circles":   "I cerchi hanno ipnotizzato la forma. L'occhio non trova pace.",
     "halftone":         "La stampa ha dissolto l'immagine. Il punto e' tutto cio' che resta.",
     "moire":            "Le griglie si sono scontrate. Il pattern e' nato dal conflitto.",
-    "drip":             "La gravità ha scelto i colori. Il pixel ha obbedito alla caduta.",
+    "drip":             "La gravita' ha scelto i colori. Il pixel ha obbedito alla caduta.",
     "oil_paint":        "Il pennello ha ridisegnato la realta'. La texture ha vinto sul pixel.",
     "posterize":        "Il colore e' stato ridotto all'essenziale. La serigrafia non perdona.",
     "neon_glow":        "I bordi si sono accesi. Il buio esalta la luce.",
@@ -1182,19 +1134,19 @@ EFFECT_QUOTES = {
 }
 
 EFFECT_ENGINES = {
-    "vhs":            "magnetic_tape_engine",
-    "distruttivo":    "block_fragment_engine",
-    "noise":          "entropy_noise_core",
-    "pixel_sort":     "luminance_sort_engine",
-    "wave_warp":      "sinusoidal_warp_engine",
-    "chromatic":      "radial_aberration_core",
-    "datamosh":       "frame_decay_engine",
-    "scanline_burn":  "crt_burn_engine",
-    "psychedelic":    "hue_rotation_core",
-    "channel_swap":   "channel_matrix_engine",
-    "image_feedback": "recursive_zoom_engine",
-    "destruction_art":"strip_collage_engine",
-    "analogic":       "analog_sync_engine",
+    "vhs":              "magnetic_tape_engine",
+    "distruttivo":      "block_fragment_engine",
+    "noise":            "entropy_noise_core",
+    "pixel_sort":       "luminance_sort_engine",
+    "wave_warp":        "sinusoidal_warp_engine",
+    "chromatic":        "radial_aberration_core",
+    "datamosh":         "frame_decay_engine",
+    "scanline_burn":    "crt_burn_engine",
+    "psychedelic":      "hue_rotation_core",
+    "channel_swap":     "channel_matrix_engine",
+    "image_feedback":   "recursive_zoom_engine",
+    "destruction_art":  "strip_collage_engine",
+    "analogic":         "analog_sync_engine",
     "displacement_map": "self_displacement_engine",
     "op_art_circles":   "concentric_wave_engine",
     "halftone":         "halftone_dot_engine",
@@ -1207,24 +1159,23 @@ EFFECT_ENGINES = {
     "solarize":         "highlight_invert_engine",
     "thermal":          "false_color_engine",
     "polar":            "polar_coords_engine",
-    "tunnel_zoom":      "recursive_zoom_engine",
+    "tunnel_zoom":      "tunnel_zoom_engine",
     "mirror_kal":       "radial_symmetry_engine",
     "crosshatch":       "hatch_render_engine",
     "stippling":        "pointillism_engine",
 }
 
 
-def make_report(effect_key: str, effect_label: str, img_size, param_vals: list, param_labels: list, ts: str) -> bytes:
+def make_report(effect_key, effect_label, img_size, param_vals, param_labels, ts):
     w, h = img_size
     mpx = w * h / 1_000_000
     date_str, time_str = ts.split(" ")
     engine = EFFECT_ENGINES.get(effect_key, "unknown_engine")
     quote  = EFFECT_QUOTES.get(effect_key, "Il glitch e' la verita'.")
     avg_pct = int(sum(param_vals) / len(param_vals) / 2.0 * 100) if param_vals else 0
-
     lines = [
         f"GLITCHLAB [IMAGE] // {effect_label.upper()} // 01 //",
-        f":: MOTORE: {engine} [v2.0]",
+        f":: MOTORE: {engine} [v3.0]",
         f":: PROCESSO: Corruzione Singolo Strato — {effect_label.upper()}",
         "",
         f'"{quote}"',
@@ -1237,7 +1188,7 @@ def make_report(effect_key: str, effect_label: str, img_size, param_vals: list, 
         f"> {effect_label.upper()} ENGINE:",
     ]
     for label, val in zip(param_labels, param_vals):
-        lines.append(f"* {label:<18}: {val:.2f}")
+        lines.append(f"* {label:<22}: {val:.2f}")
     lines += [
         "",
         "> Regia e Algoritmo: Loop507",
@@ -1252,7 +1203,10 @@ def make_report(effect_key: str, effect_label: str, img_size, param_vals: list, 
 #  SESSION STATE
 # ══════════════════════════════════════════════════════════════════════════════
 
-ss_keys = ["processed"] + [f"img_{e[0]}" for e in EFFECTS] + [f"rep_{e[0]}" for e in EFFECTS] + [f"params_{e[0]}" for e in EFFECTS]
+ss_keys = (["processed"]
+           + [f"img_{e[0]}"    for e in EFFECTS]
+           + [f"rep_{e[0]}"    for e in EFFECTS]
+           + [f"params_{e[0]}" for e in EFFECTS])
 for k in ss_keys:
     if k not in st.session_state:
         st.session_state[k] = None
@@ -1270,7 +1224,6 @@ if uploaded_file is not None:
         st.image(img, caption="🖼️ Originale", use_container_width=True)
         st.info(f"Dimensioni: {img.size[0]} × {img.size[1]} px")
 
-        # ── Modalità Live / Manuale ────────────────────────────────────────────
         st.markdown("### 🎛️ Controlli Effetti")
         st.markdown("---")
         live_mode = st.checkbox(
@@ -1281,32 +1234,22 @@ if uploaded_file is not None:
         if not live_mode:
             if st.button("✨ Genera tutti gli effetti"):
                 should_process = True
-
         if live_mode:
             st.caption("💡 I download salvano l'ultimo frame generato.")
-
         st.markdown("---")
 
-        # ── Expander per ogni effetto: slider + anteprima + download ──────────
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        all_params = {}
 
         for key, label, emoji, fn, sliders in EFFECTS:
             with st.expander(f"{emoji} {label}", expanded=False):
-
-                # Slider
                 sc = st.columns(len(sliders))
                 vals = []
                 for i, (slabel, smin, smax, sdef, sstep, skey) in enumerate(sliders):
                     v = sc[i].slider(slabel, smin, smax, sdef, sstep, key=skey)
                     vals.append(v)
-                all_params[key] = vals
 
-                # Rileva se i parametri sono cambiati rispetto all'ultimo calcolo
                 prev_vals = st.session_state.get(f"params_{key}")
                 params_changed = (prev_vals != vals)
-
-                # Elabora se: Genera premuto, oppure slider cambiato (in Live sempre; in Manuale solo se già calcolato)
                 needs_process = (
                     should_process
                     or (live_mode and params_changed)
@@ -1315,31 +1258,23 @@ if uploaded_file is not None:
 
                 if needs_process:
                     result_img = fn(img, *vals)
-                    st.session_state[f"img_{key}"] = img_to_bytes(result_img)
-                    param_labels = [s[0] for s in sliders]
-                    st.session_state[f"rep_{key}"] = make_report(
-                        key, label, img.size, vals, param_labels, ts
-                    )
+                    st.session_state[f"img_{key}"]    = img_to_bytes(result_img)
+                    st.session_state[f"rep_{key}"]    = make_report(
+                        key, label, img.size, vals, [s[0] for s in sliders], ts)
                     st.session_state[f"params_{key}"] = vals
-                    st.session_state.processed = True
+                    st.session_state.processed        = True
 
-                # Anteprima + download dentro l'expander
                 if st.session_state.get(f"img_{key}"):
                     img_bytes = st.session_state[f"img_{key}"]
                     rep_bytes = st.session_state[f"rep_{key}"]
                     st.image(img_bytes, caption=f"{emoji} {label}", use_container_width=True)
                     dl1, dl2 = st.columns(2)
-                    dl1.download_button(
-                        "⬇️ Immagine", img_bytes,
-                        f"{key}_glitch.png", "image/png",
-                        key=f"dl_img_{key}"
-                    )
-                    dl2.download_button(
-                        "📄 Report", rep_bytes,
-                        f"{key}_report.txt", "text/plain",
-                        key=f"dl_rep_{key}"
-                    )
-
+                    dl1.download_button("⬇️ Immagine", img_bytes,
+                                        f"{key}_glitch.png", "image/png",
+                                        key=f"dl_img_{key}")
+                    dl2.download_button("📄 Report", rep_bytes,
+                                        f"{key}_report.txt", "text/plain",
+                                        key=f"dl_rep_{key}")
 
     except Exception as e:
         st.error(f"Errore: {e}")
@@ -1347,8 +1282,6 @@ if uploaded_file is not None:
 else:
     st.info("📁 Carica un'immagine per iniziare!")
 
-
-# ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("---")
-st.markdown("🔥 **GlitchLabLoop507** — 13 effetti glitch per le tue foto")
+st.markdown("🔥 **GlitchLabLoop507** — 29 effetti glitch per le tue foto")
 st.markdown("*⚡ Live per lavorare in tempo reale · ✨ Genera per elaborare tutti gli effetti insieme*")
