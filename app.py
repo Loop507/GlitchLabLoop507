@@ -891,6 +891,77 @@ def glitch_crosshatch(img, density=0.5, angle=0.3, thickness=0.3):
         st.error(f"Crosshatch: {e}"); return img
 
 
+def glitch_drip(img, direction=0.0, threshold=0.5, color_split=0.5):
+    """Pixel sort a colata — stalattiti cromatiche in 4 direzioni."""
+    try:
+        img = img.convert("RGB")
+        arr = np.array(img, dtype=np.uint8)
+        h, w, _ = arr.shape
+        out = arr.copy()
+
+        # direction: 0=giù, 0.25=su, 0.5=destra, 0.75=sinistra (con gradazioni diagonali intermedie)
+        dir_idx = int(direction * 4) % 4   # 0 down, 1 up, 2 right, 3 left
+        diag_blend = (direction * 4) % 1   # 0..1 quanto mescolare con la direzione successiva
+
+        thresh_val = threshold * 255
+
+        def sort_channel(ch_arr, axis, reverse=False):
+            """Ordina lungo un asse solo dove luminosità supera soglia."""
+            out_ch = ch_arr.copy()
+            lum = (arr[:, :, 0] * 0.299 + arr[:, :, 1] * 0.587 + arr[:, :, 2] * 0.114)
+            if axis == 0:  # colonne (up/down)
+                for x in range(w):
+                    col = ch_arr[:, x]
+                    mask = lum[:, x] > thresh_val
+                    if mask.sum() < 2:
+                        continue
+                    idx = np.where(mask)[0]
+                    # trova segmenti contigui
+                    sorted_seg = np.sort(col[idx])[::-1] if reverse else np.sort(col[idx])
+                    out_ch[idx, x] = sorted_seg
+            else:          # righe (left/right)
+                for y in range(h):
+                    row = ch_arr[y, :]
+                    mask = lum[y, :] > thresh_val
+                    if mask.sum() < 2:
+                        continue
+                    idx = np.where(mask)[0]
+                    sorted_seg = np.sort(row[idx])[::-1] if reverse else np.sort(row[idx])
+                    out_ch[y, idx] = sorted_seg
+            return out_ch
+
+        configs = [
+            (0, False),   # down
+            (0, True),    # up
+            (1, False),   # right
+            (1, True),    # left
+        ]
+        ax, rev = configs[dir_idx]
+        ax2, rev2 = configs[(dir_idx + 1) % 4]
+
+        # Color split: ogni canale shiftato leggermente in direzione diversa
+        split = color_split
+        for ch in range(3):
+            ch_data = arr[:, :, ch]
+            # Applica sort primario
+            sorted1 = sort_channel(ch_data, ax, rev)
+            if diag_blend > 0.05:
+                sorted2 = sort_channel(ch_data, ax2, rev2)
+                sorted1 = (sorted1 * (1 - diag_blend) + sorted2 * diag_blend).astype(np.uint8)
+            # Color bleed: R verso destra, B verso sinistra, G invariato
+            if split > 0.05:
+                shift = int(split * 20) * (ch - 1)   # R=-20..0, G=0, B=0..20
+                if ax == 0:
+                    sorted1 = np.roll(sorted1, shift, axis=1)
+                else:
+                    sorted1 = np.roll(sorted1, shift, axis=0)
+            out[:, :, ch] = sorted1
+
+        return Image.fromarray(out)
+    except Exception as e:
+        st.error(f"Drip: {e}"); return img
+
+
 def glitch_stippling(img, density=0.5, dot_size=0.5, color_mode=0.5):
     """Puntinismo digitale — nuvole di punti."""
     try:
@@ -918,6 +989,70 @@ def glitch_stippling(img, density=0.5, dot_size=0.5, color_mode=0.5):
         return Image.fromarray(out.astype(np.uint8))
     except Exception as e:
         st.error(f"Stippling: {e}"); return img
+
+
+def glitch_drip(img, length=0.6, separation=0.5, blend=0.7):
+    """Pixel sort verticale per colonne con color bleed — effetto stalattiti/dripping."""
+    try:
+        img = img.convert("RGB")
+        arr = np.array(img, dtype=np.uint8).astype(np.float32)
+        h, w, _ = arr.shape
+        out = arr.copy()
+
+        # Ogni canale viene sortato separatamente con offset laterale
+        # per creare la separazione cromatica (ciano/magenta dell'immagine di riferimento)
+        ch_offsets = [
+            int(-separation * 8),   # R — shift sinistra
+            0,                       # G — centro
+            int(separation * 8),    # B — shift destra
+        ]
+
+        max_drip = int(h * (0.3 + 0.7 * length))
+
+        for ch in range(3):
+            ch_arr = arr[:, :, ch].copy()
+            ch_out = ch_arr.copy()
+            offset = ch_offsets[ch]
+
+            for x in range(w):
+                # Colonna sorgente con offset cromatico
+                src_x = int(np.clip(x + offset, 0, w - 1))
+                col = ch_arr[:, src_x].copy()
+
+                # Trova le zone "attive" (non sfondo) usando luminosità
+                lum_col = (arr[:, src_x, 0] * 0.299 + arr[:, src_x, 1] * 0.587 + arr[:, src_x, 2] * 0.114)
+                threshold = lum_col.mean() * 0.6
+
+                # Segmenta la colonna: ordina solo le zone sopra soglia
+                mask = lum_col > threshold
+                if mask.sum() > 2:
+                    indices = np.where(mask)[0]
+                    # Ordina i pixel per luminosità (i più luminosi salgono)
+                    seg = col[indices]
+                    seg_sorted = seg[np.argsort(seg)]  # ascendente → drip verso il basso
+
+                    # Limita la lunghezza del drip
+                    drip_len = min(len(indices), max_drip)
+                    indices_trimmed = indices[:drip_len]
+                    ch_out[indices_trimmed, x] = seg_sorted[:drip_len]
+
+            # Applica un lieve blur verticale per ammorbidire le stalattiti
+            from PIL import ImageFilter
+            ch_img = Image.fromarray(ch_out.astype(np.uint8))
+            ch_blurred = np.array(ch_img.filter(ImageFilter.GaussianBlur(radius=0.8)), dtype=np.float32)
+            out[:, :, ch] = ch_out * (1 - blend * 0.2) + ch_blurred * (blend * 0.2)
+
+        # Color bleed verticale finale per accentuare il dripping
+        bleed = blend * 0.15
+        for ch in range(3):
+            out[:, :, ch] = (
+                out[:, :, ch] * (1 - bleed)
+                + np.roll(out[:, :, ch], int(3 + 6 * length), axis=0) * bleed
+            )
+
+        return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
+    except Exception as e:
+        st.error(f"Drip: {e}"); return img
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1011,10 +1146,10 @@ EFFECTS = [
         ("Frequenza 2",    0.0, 1.0, 0.6, 0.05,"mo_f2"),
         ("Angolo",         0.0, 1.0, 0.3, 0.05,"mo_ang"),
     ]),
-    ("kaleidoscope", "Kaleidoscope", "💎", glitch_kaleidoscope, [
-        ("Segmenti",       0.0, 1.0, 0.4, 0.05,"kal_seg"),
-        ("Rotazione",      0.0, 1.0, 0.0, 0.05,"kal_rot"),
-        ("Zoom",           0.0, 1.0, 0.5, 0.05,"kal_zoom"),
+    ("drip", "Drip Sort", "🌊💧", glitch_drip, [
+        ("Direzione",      0.0, 1.0, 0.0, 0.05, "drip_dir"),
+        ("Soglia",         0.0, 1.0, 0.4, 0.05, "drip_thresh"),
+        ("Color Split",    0.0, 1.0, 0.4, 0.05, "drip_col"),
     ]),
     ("oil_paint", "Oil Paint", "🖌️", glitch_oil_paint, [
         ("Raggio",         0.0, 1.0, 0.4, 0.05,"op_rad"),
@@ -1096,7 +1231,7 @@ EFFECT_QUOTES = {
     "op_art_circles":   "I cerchi hanno ipnotizzato la forma. L'occhio non trova pace.",
     "halftone":         "La stampa ha dissolto l'immagine. Il punto e' tutto cio' che resta.",
     "moire":            "Le griglie si sono scontrate. Il pattern e' nato dal conflitto.",
-    "kaleidoscope":     "Lo specchio si e' moltiplicato. La simmetria e' diventata caos.",
+    "drip":             "La gravità ha scelto i colori. Il pixel ha obbedito alla caduta.",
     "oil_paint":        "Il pennello ha ridisegnato la realta'. La texture ha vinto sul pixel.",
     "posterize":        "Il colore e' stato ridotto all'essenziale. La serigrafia non perdona.",
     "neon_glow":        "I bordi si sono accesi. Il buio esalta la luce.",
@@ -1128,7 +1263,7 @@ EFFECT_ENGINES = {
     "op_art_circles":   "concentric_wave_engine",
     "halftone":         "halftone_dot_engine",
     "moire":            "grid_interference_engine",
-    "kaleidoscope":     "radial_mirror_engine",
+    "drip":             "directional_drip_sort_engine",
     "oil_paint":        "kuwahara_paint_engine",
     "posterize":        "color_quantize_engine",
     "neon_glow":        "edge_neon_engine",
@@ -1235,7 +1370,7 @@ if uploaded_file is not None:
                 prev_vals = st.session_state.get(f"params_{key}")
                 params_changed = (prev_vals != vals)
 
-                # Elabora se: Genera premuto, oppure slider cambiato (in Live sempre; in Manuale solo se gia' calcolato)
+                # Elabora se: Genera premuto, oppure slider cambiato (in Live sempre; in Manuale solo se già calcolato)
                 needs_process = (
                     should_process
                     or (live_mode and params_changed)
