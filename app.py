@@ -966,13 +966,13 @@ EFFECTS = [
     ]),
     ("pixel_sort", "Pixel Sort", "🔀", glitch_pixel_sort, [
         ("Soglia lum.",    0.0, 1.0, 0.4, 0.05, "ps_thresh"),
-        ("Asse (0=H 1=V)", 0.0, 1.0, 1.0, 1.0,  "ps_asse"),
+        ("Asse (0=H 1=V)", 0.0, 1.0, 1.0, 0.5,  "ps_asse"),
         ("Span max",       0.0, 1.0, 0.8, 0.05, "ps_span"),
     ]),
     ("wave_warp", "Wave Warp", "〰️", glitch_wave_warp, [
         ("Ampiezza",       0.0, 2.0, 1.0, 0.1,  "ww_amp"),
         ("Frequenza",      0.0, 2.0, 1.0, 0.1,  "ww_freq"),
-        ("Asse (0=H 1=V)", 0.0, 1.0, 0.0, 1.0,  "ww_asse"),
+        ("Asse (0=H 1=V)", 0.0, 1.0, 0.0, 0.5,  "ww_asse"),
     ]),
     ("chromatic", "Chromatic Ab.", "🌈", glitch_chromatic, [
         ("Forza",          0.0, 1.0, 0.5, 0.05, "chr_forza"),
@@ -1007,7 +1007,7 @@ EFFECTS = [
     ("destruction_art", "Destruction Art", "✂️", glitch_destruction_art, [
         ("Tagli",          0.0, 1.0, 0.5, 0.05, "da_cuts"),
         ("Scatter",        0.0, 1.0, 0.4, 0.05, "da_scatter"),
-        ("Asse (0=H 1=V)", 0.0, 1.0, 0.0, 1.0,  "da_asse"),
+        ("Asse (0=H 1=V)", 0.0, 1.0, 0.0, 0.5,  "da_asse"),
     ]),
     ("analogic", "Glitch Analogic", "📻", glitch_analogic, [
         ("Sync Loss",      0.0, 1.0, 0.5, 0.05, "ag_sync"),
@@ -1026,7 +1026,7 @@ EFFECTS = [
     ]),
     ("halftone", "Halftone", "🔵", glitch_halftone, [
         ("Dim. Punto",     0.0, 1.0, 0.4, 0.05, "ht_size"),
-        ("Sfondo bianco",  0.0, 1.0, 1.0, 1.0,  "ht_sfondo"),
+        ("Sfondo bianco",  0.0, 1.0, 1.0, 0.5,  "ht_sfondo"),
         ("Colore",         0.0, 1.0, 0.7, 0.05, "ht_color"),
     ]),
     ("moire", "Moire Pattern", "🔲", glitch_moire, [
@@ -1037,7 +1037,7 @@ EFFECTS = [
     ("drip", "Drip Sort", "🌊💧", glitch_drip, [
         ("Soglia lum.",    0.0, 1.0, 0.3, 0.05, "drip_soglia"),
         ("Sep. RGB",       0.0, 1.0, 0.5, 0.05, "drip_rgb"),
-        ("Asse (0=V 1=H)", 0.0, 1.0, 0.0, 1.0,  "drip_asse"),
+        ("Asse (0=V 1=H)", 0.0, 1.0, 0.0, 0.5,  "drip_asse"),
     ]),
     ("oil_paint", "Oil Paint", "🖌️", glitch_oil_paint, [
         ("Raggio",         0.0, 1.0, 0.3, 0.05, "op_rad"),
