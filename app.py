@@ -1181,7 +1181,7 @@ def make_report(effect_key: str, effect_label: str, img_size, param_vals: list, 
 #  SESSION STATE
 # ══════════════════════════════════════════════════════════════════════════════
 
-ss_keys = ["processed"] + [f"img_{e[0]}" for e in EFFECTS] + [f"rep_{e[0]}" for e in EFFECTS]
+ss_keys = ["processed"] + [f"img_{e[0]}" for e in EFFECTS] + [f"rep_{e[0]}" for e in EFFECTS] + [f"params_{e[0]}" for e in EFFECTS]
 for k in ss_keys:
     if k not in st.session_state:
         st.session_state[k] = None
@@ -1231,14 +1231,25 @@ if uploaded_file is not None:
                     vals.append(v)
                 all_params[key] = vals
 
-                # Elabora se live o se si è appena premuto Genera
-                if should_process:
+                # Rileva se i parametri sono cambiati rispetto all'ultimo calcolo
+                prev_vals = st.session_state.get(f"params_{key}")
+                params_changed = (prev_vals != vals)
+
+                # Elabora se: Genera premuto, oppure slider cambiato (in Live sempre; in Manuale solo se gia' calcolato)
+                needs_process = (
+                    should_process
+                    or (live_mode and params_changed)
+                    or (not live_mode and params_changed and st.session_state.get(f"img_{key}") is not None)
+                )
+
+                if needs_process:
                     result_img = fn(img, *vals)
                     st.session_state[f"img_{key}"] = img_to_bytes(result_img)
                     param_labels = [s[0] for s in sliders]
                     st.session_state[f"rep_{key}"] = make_report(
                         key, label, img.size, vals, param_labels, ts
                     )
+                    st.session_state[f"params_{key}"] = vals
                     st.session_state.processed = True
 
                 # Anteprima + download dentro l'expander
