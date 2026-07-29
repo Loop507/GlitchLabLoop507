@@ -2,6 +2,7 @@ import streamlit as st
 from PIL import Image, ImageFilter
 import numpy as np
 import io
+import zipfile
 import random
 from datetime import datetime
 
@@ -1172,6 +1173,21 @@ EFFECT_ENGINES = {
 }
 
 
+def build_zip_all_images(effects):
+    """Crea uno zip con tutte le immagini e i report già generati (presenti in session_state)."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for key, label, emoji, fn, sliders in effects:
+            img_bytes = st.session_state.get(f"img_{key}")
+            rep_bytes = st.session_state.get(f"rep_{key}")
+            if img_bytes:
+                zf.writestr(f"{key}_glitch.png", img_bytes)
+            if rep_bytes:
+                zf.writestr(f"{key}_report.txt", rep_bytes)
+    buf.seek(0)
+    return buf.getvalue()
+
+
 def make_report(effect_key, effect_label, img_size, param_vals, param_labels, ts):
     w, h = img_size
     mpx = w * h / 1_000_000
@@ -1227,7 +1243,7 @@ uploaded_file = st.file_uploader("📁 Carica un'immagine", type=["jpg", "jpeg",
 if uploaded_file is not None:
     try:
         img = Image.open(uploaded_file).convert("RGB")
-        st.image(img, caption="🖼️ Originale", use_container_width=True)
+        st.image(img, caption="🖼️ Originale", width=350)
         st.info(f"Dimensioni: {img.size[0]} × {img.size[1]} px")
 
         st.markdown("### 🎛️ Controlli Effetti")
@@ -1273,7 +1289,7 @@ if uploaded_file is not None:
                 if st.session_state.get(f"img_{key}"):
                     img_bytes = st.session_state[f"img_{key}"]
                     rep_bytes = st.session_state[f"rep_{key}"]
-                    st.image(img_bytes, caption=f"{emoji} {label}", use_container_width=True)
+                    st.image(img_bytes, caption=f"{emoji} {label}", width=350)
                     dl1, dl2 = st.columns(2)
                     dl1.download_button("⬇️ Immagine", img_bytes,
                                         f"{key}_glitch.png", "image/png",
@@ -1281,6 +1297,18 @@ if uploaded_file is not None:
                     dl2.download_button("📄 Report", rep_bytes,
                                         f"{key}_report.txt", "text/plain",
                                         key=f"dl_rep_{key}")
+
+        n_generate = sum(1 for key, *_ in EFFECTS if st.session_state.get(f"img_{key}"))
+        if n_generate > 0:
+            st.markdown("---")
+            zip_bytes = build_zip_all_images(EFFECTS)
+            st.download_button(
+                f"📦 Scarica tutte le immagini + report ({n_generate}) in ZIP",
+                zip_bytes,
+                "glitchlab_tutti_effetti.zip",
+                "application/zip",
+                key="dl_zip_all"
+            )
 
     except Exception as e:
         st.error(f"Errore: {e}")
