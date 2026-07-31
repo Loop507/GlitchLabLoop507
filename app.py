@@ -1029,6 +1029,55 @@ def glitch_retro_palette(img, intensity=1.0, dither=0.5, pixel_size=1.0):
         st.error(f"Retro Palette: {e}"); return img
 
 
+_ASCII_RAMP = " .:-=+*#%@"  # rampa di densità crescente, convenzione standard ascii-art
+
+def glitch_ascii_art(img, intensity=1.0, colore=0.5, dim_cella=1.0):
+    """ASCII Art: l'immagine viene ricostruita a blocchi, ogni blocco sostituito da un
+    carattere scelto in base alla luminosità media locale (rampa ' .:-=+*#%@'), in stile
+    terminale monocromatico (verde su nero) oppure a colori reali per carattere."""
+    try:
+        from PIL import ImageDraw, ImageFont
+        img = img.convert("RGB")
+        w0, h0 = img.size
+        arr0 = np.array(img, dtype=np.uint8)
+
+        font = ImageFont.load_default()
+        ch_w = max(1, max(font.getbbox(c)[2] for c in _ASCII_RAMP))
+        ch_h = max(1, max(font.getbbox(c)[3] for c in _ASCII_RAMP))
+
+        max_cols = 100
+        cols = max(10, min(max_cols, int(max_cols / max(0.2, dim_cella))))
+        cell = max(2, w0 // cols)
+        cols = max(1, w0 // cell)
+        rows = max(1, h0 // cell)
+
+        canvas = Image.new("RGB", (cols * ch_w, rows * ch_h), (0, 0, 0))
+        draw = ImageDraw.Draw(canvas)
+        mono_color = (60, 220, 90)  # verde terminale
+
+        for ry in range(rows):
+            y0, y1 = ry * cell, min(h0, (ry + 1) * cell)
+            row_block = arr0[y0:y1]
+            for rx in range(cols):
+                x0, x1 = rx * cell, min(w0, (rx + 1) * cell)
+                block = row_block[:, x0:x1]
+                if block.size == 0:
+                    continue
+                avg_color = block.reshape(-1, 3).mean(axis=0)
+                lum = (avg_color[0]*0.299 + avg_color[1]*0.587 + avg_color[2]*0.114) / 255.0
+                ch = _ASCII_RAMP[min(len(_ASCII_RAMP) - 1, int(lum * (len(_ASCII_RAMP) - 1)))]
+                col = tuple(int(c) for c in avg_color) if colore > 0.5 else mono_color
+                draw.text((rx * ch_w, ry * ch_h), ch, fill=col, font=font)
+
+        ascii_img = np.array(canvas.resize((w0, h0), Image.NEAREST), dtype=np.float32)
+
+        blend = float(np.clip((intensity / 3.0) ** 0.4, 0.02, 1.0))
+        out = arr0.astype(np.float32) * (1 - blend) + ascii_img * blend
+        return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
+    except Exception as e:
+        st.error(f"ASCII Art: {e}"); return img
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  CATALOGO EFFETTI
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1189,6 +1238,11 @@ EFFECTS = [
         ("Dithering",      0.0, 1.0, 0.5, 0.05, "rp_dit"),
         ("Dim. Pixel",     0.2, 3.0, 1.0, 0.1, "rp_pix"),
     ]),
+    ("ascii_art", "ASCII Art", "🔤", glitch_ascii_art, [
+        ("Intensità",      0.0, 2.0, 1.0, 0.1, "as_int"),
+        ("Colore",         0.0, 1.0, 0.5, 0.05, "as_col"),
+        ("Dim. Cella",     0.2, 3.0, 1.0, 0.1, "as_cel"),
+    ]),
 ]
 
 
@@ -1228,6 +1282,7 @@ EFFECT_QUOTES = {
     "stippling":        "Il punto e' la minima unita' di verita'. Milioni di punti, una sola immagine.",
     "rutt_etra":        "Lo scanner ha riscritto la riga secondo la luce. Il segnale e' diventato forma.",
     "retro_palette":    "Sedici colori bastano per ricordare tutto. Il pixel e' tornato all'origine.",
+    "ascii_art":        "L'immagine e' diventata testo. Il carattere ha sostituito il colore.",
 }
 
 EFFECT_ENGINES = {
@@ -1262,6 +1317,7 @@ EFFECT_ENGINES = {
     "stippling":        "pointillism_engine",
     "rutt_etra":        "scan_luminance_engine",
     "retro_palette":    "c64_palette_quantize_engine",
+    "ascii_art":        "glyph_luminance_engine",
 }
 
 
