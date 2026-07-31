@@ -1448,7 +1448,7 @@ if uploaded_file is not None:
                 if st.session_state.get(f"img_{key}"):
                     img_bytes = st.session_state[f"img_{key}"]
                     rep_bytes = st.session_state[f"rep_{key}"]
-                    st.image(img_bytes, caption=f"{emoji} {label}", width=500)
+                    st.image(img_bytes, caption=f"{emoji} {label}", width=650)
                     dl1, dl2 = st.columns(2)
                     dl1.download_button("⬇️ Immagine", img_bytes,
                                         f"{key}_glitch.png", "image/png",
