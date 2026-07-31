@@ -1400,12 +1400,22 @@ if uploaded_file is not None:
             "⚡ Modalità Live — l'anteprima si aggiorna ad ogni slider",
             value=False, key="live_mode"
         )
-        should_process = live_mode
-        if not live_mode:
+
+        live_effect_key = None
+        should_process = False
+        if live_mode:
+            effect_labels = [f"{emoji} {label}" for key, label, emoji, fn, sliders in EFFECTS]
+            effect_keys = [key for key, label, emoji, fn, sliders in EFFECTS]
+            sel_label = st.selectbox(
+                "🎯 Effetto da modificare in Live",
+                effect_labels, key="live_effect_select"
+            )
+            live_effect_key = effect_keys[effect_labels.index(sel_label)]
+            st.caption("💡 Solo questo effetto si aggiorna ad ogni slider. Gli altri restano fermi "
+                       "all'ultima immagine generata. I download salvano l'ultimo frame generato.")
+        else:
             if st.button("✨ Genera tutti gli effetti"):
                 should_process = True
-        if live_mode:
-            st.caption("💡 I download salvano l'ultimo frame generato.")
         st.markdown("---")
 
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1420,9 +1430,10 @@ if uploaded_file is not None:
 
                 prev_vals = st.session_state.get(f"params_{key}")
                 params_changed = (prev_vals != vals)
+                is_live_target = live_mode and (key == live_effect_key)
                 needs_process = (
                     should_process
-                    or (live_mode and params_changed)
+                    or (is_live_target and (params_changed or st.session_state.get(f"img_{key}") is None))
                     or (not live_mode and params_changed and st.session_state.get(f"img_{key}") is not None)
                 )
 
