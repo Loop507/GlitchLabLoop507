@@ -1083,165 +1083,165 @@ def glitch_ascii_art(img, intensity=1.0, colore=0.5, dim_cella=1.0):
 # ══════════════════════════════════════════════════════════════════════════════
 
 EFFECTS = [
-    ("vhs", "VHS", "📺", glitch_vhs, [
-        ("Intensità",      0.0, 2.0, 1.0, 0.1,  "vhs_int"),
-        ("Scanlines",      0.0, 2.0, 1.0, 0.1,  "vhs_scan"),
-        ("Color Split",    0.0, 2.0, 1.0, 0.1,  "vhs_col"),
-    ]),
-    ("distruttivo", "Distruttivo", "💥", glitch_distruttivo, [
-        ("Dim. Blocchi",   0.0, 2.0, 1.0, 0.1,  "dest_size"),
-        ("Num. Blocchi",   0.0, 2.0, 1.0, 0.1,  "dest_num"),
-        ("Spostamento",    0.0, 2.0, 1.0, 0.1,  "dest_disp"),
-    ]),
-    ("noise", "Noise", "🌀", glitch_noise, [
-        ("Intensità",      0.0, 2.0, 1.0, 0.1,  "noise_int"),
-        ("Copertura",      0.0, 1.0, 0.7, 0.05, "noise_cov"),
-        ("Tipo (0=bande 0.5=pixel 1=onde)", 0.0, 1.0, 0.0, 0.01, "noise_tipo"),
-    ]),
-    ("pixel_sort", "Pixel Sort", "🔀", glitch_pixel_sort, [
-        ("Soglia lum.",    0.0, 1.0, 0.4, 0.05, "ps_thresh"),
-        ("Asse (0=H 1=V)", 0.0, 1.0, 1.0, 0.5,  "ps_asse"),
-        ("Span max",       0.0, 1.0, 0.8, 0.05, "ps_span"),
-    ]),
-    ("wave_warp", "Wave Warp", "〰️", glitch_wave_warp, [
-        ("Ampiezza",       0.0, 2.0, 1.0, 0.1,  "ww_amp"),
-        ("Frequenza",      0.0, 2.0, 1.0, 0.1,  "ww_freq"),
-        ("Asse (0=H 1=V)", 0.0, 1.0, 0.0, 0.5,  "ww_asse"),
-    ]),
-    ("chromatic", "Chromatic Ab.", "🌈", glitch_chromatic, [
-        ("Forza",          0.0, 1.0, 0.5, 0.05, "chr_forza"),
-        ("Angolo",         0.0, 1.0, 0.0, 0.05, "chr_ang"),
-        ("Zoom aberr.",    0.0, 1.0, 0.3, 0.05, "chr_zoom"),
-    ]),
-    ("datamosh", "Datamosh", "📼", glitch_datamosh, [
-        ("Dim. Blocchi",   0.0, 2.0, 1.0, 0.1,  "dm_block"),
-        ("Decay",          0.0, 1.0, 0.5, 0.05, "dm_decay"),
-        ("N. Blocchi",     0.0, 1.0, 0.5, 0.05, "dm_num"),
-    ]),
-    ("scanline_burn", "Scanline Burn", "📟", glitch_scanline_burn, [
-        ("Intensità",      0.0, 2.0, 1.0, 0.1,  "sb_int"),
-        ("Densità",        0.0, 1.0, 0.4, 0.05, "sb_den"),
-        ("Color Bleed",    0.0, 1.0, 0.5, 0.05, "sb_bleed"),
-    ]),
-    ("psychedelic", "Psychedelic", "🔮", glitch_psychedelic, [
-        ("Hue Shift",      0.0, 1.0, 0.3, 0.05, "psy_hue"),
-        ("Saturazione",    0.0, 1.0, 0.5, 0.05, "psy_sat"),
-        ("Inversione",     0.0, 1.0, 0.0, 0.05, "psy_inv"),
+    ("ascii_art", "ASCII Art", "🔤", glitch_ascii_art, [
+        ("Intensità",      0.0, 2.0, 1.0, 0.1, "as_int"),
+        ("Colore",         0.0, 1.0, 0.5, 0.05, "as_col"),
+        ("Dim. Cella",     0.2, 3.0, 1.0, 0.1, "as_cel"),
     ]),
     ("channel_swap", "Channel Swap", "🔁", glitch_channel_swap, [
         ("Modalità (0-5)", 0.0, 1.0, 0.0, 0.2,  "cs_mode"),
         ("Blend",          0.0, 1.0, 0.6, 0.05, "cs_blend"),
         ("Shift px",       0.0, 1.0, 0.0, 0.05, "cs_shift"),
     ]),
-    ("image_feedback", "Image Feedback", "📡🔁", glitch_image_feedback, [
-        ("Zoom",           0.0, 1.0, 0.5, 0.05, "fb_zoom"),
-        ("Iterazioni",     0.0, 1.0, 0.4, 0.05, "fb_iter"),
-        ("Decay",          0.0, 1.0, 0.5, 0.05, "fb_decay"),
-    ]),
-    ("destruction_art", "Destruction Art", "✂️", glitch_destruction_art, [
-        ("Tagli",          0.0, 1.0, 0.5, 0.05, "da_cuts"),
-        ("Scatter",        0.0, 1.0, 0.4, 0.05, "da_scatter"),
-        ("Asse (0=H 1=V)", 0.0, 1.0, 0.0, 0.5,  "da_asse"),
-    ]),
-    ("analogic", "Glitch Analogic", "📻", glitch_analogic, [
-        ("Sync Loss",      0.0, 1.0, 0.5, 0.05, "ag_sync"),
-        ("Color Bleed",    0.0, 1.0, 0.4, 0.05, "ag_bleed"),
-        ("Static",         0.0, 1.0, 0.3, 0.05, "ag_static"),
-    ]),
-    ("displacement_map", "Displacement Map", "🌊", glitch_displacement_map, [
-        ("Forza",          0.0, 1.0, 0.5, 0.05, "dsp_forza"),
-        ("Blur Scala",     0.0, 1.0, 0.4, 0.05, "dsp_blur"),
-        ("Canale (R/G/B)", 0.0, 1.0, 0.0, 0.5,  "dsp_canale"),
-    ]),
-    ("op_art_circles", "Op Art Circles", "⭕", glitch_op_art_circles, [
-        ("Frequenza",      0.0, 1.0, 0.5, 0.05, "oa_freq"),
-        ("Contrasto",      0.0, 1.0, 0.6, 0.05, "oa_cont"),
-        ("Blend",          0.0, 1.0, 0.5, 0.05, "oa_blend"),
-    ]),
-    ("halftone", "Halftone", "🔵", glitch_halftone, [
-        ("Dim. Punto",     0.0, 1.0, 0.4, 0.05, "ht_size"),
-        ("Sfondo bianco",  0.0, 1.0, 1.0, 0.5,  "ht_sfondo"),
-        ("Colore",         0.0, 1.0, 0.7, 0.05, "ht_color"),
-    ]),
-    ("moire", "Moire Pattern", "🔲", glitch_moire, [
-        ("Frequenza 1",    0.0, 1.0, 0.4, 0.05, "mo_f1"),
-        ("Frequenza 2",    0.0, 1.0, 0.6, 0.05, "mo_f2"),
-        ("Angolo",         0.0, 1.0, 0.3, 0.05, "mo_ang"),
-    ]),
-    ("drip", "Drip Sort", "🌊💧", glitch_drip, [
-        ("Soglia lum.",    0.0, 1.0, 0.3, 0.05, "drip_soglia"),
-        ("Sep. RGB",       0.0, 1.0, 0.5, 0.05, "drip_rgb"),
-        ("Asse (0=V 1=H)", 0.0, 1.0, 0.0, 0.5,  "drip_asse"),
-    ]),
-    ("oil_paint", "Oil Paint", "🖌️", glitch_oil_paint, [
-        ("Raggio",         0.0, 1.0, 0.3, 0.05, "op_rad"),
-        ("Livelli",        0.0, 1.0, 0.5, 0.05, "op_lev"),
-        ("Blend",          0.0, 1.0, 0.7, 0.05, "op_blend"),
-    ]),
-    ("posterize", "Posterize", "🎨", glitch_posterize, [
-        ("Livelli",        0.0, 1.0, 0.4, 0.05, "po_lev"),
-        ("Dither",         0.0, 1.0, 0.4, 0.05, "po_dith"),
-        ("Color Shift",    0.0, 1.0, 0.3, 0.05, "po_col"),
-    ]),
-    ("neon_glow", "Neon Glow", "💡", glitch_neon_glow, [
-        ("Soglia bordi",   0.0, 1.0, 0.3, 0.05, "ng_thresh"),
-        ("Ampiezza glow",  0.0, 1.0, 0.5, 0.05, "ng_width"),
-        ("Colore (0-4)",   0.0, 1.0, 0.0, 0.25, "ng_color"),
-    ]),
-    ("duotone", "Duotone", "🎭", glitch_duotone, [
-        ("Colore 1 (hue)", 0.0, 1.0, 0.1, 0.05, "dt_c1"),
-        ("Colore 2 (hue)", 0.0, 1.0, 0.6, 0.05, "dt_c2"),
-        ("Blend",          0.0, 1.0, 0.8, 0.05, "dt_blend"),
-    ]),
-    ("solarize", "Solarize", "☀️", glitch_solarize, [
-        ("Soglia",         0.0, 1.0, 0.5, 0.05, "sol_thresh"),
-        ("Forza",          0.0, 1.0, 0.8, 0.05, "sol_str"),
-        ("Channel Split",  0.0, 1.0, 0.3, 0.05, "sol_ch"),
-    ]),
-    ("thermal", "Thermal Camera", "🌡️", glitch_thermal, [
-        ("Palette (0-2)",  0.0, 1.0, 0.0, 0.5,  "th_pal"),
-        ("Rumore",         0.0, 1.0, 0.2, 0.05, "th_noise"),
-        ("Contrasto",      0.0, 1.0, 0.6, 0.05, "th_cont"),
-    ]),
-    ("polar", "Polar Coords", "🌀", glitch_polar, [
-        ("Forza",          0.0, 1.0, 0.6, 0.05, "pol_str"),
-        ("Rotazione",      0.0, 1.0, 0.0, 0.05, "pol_rot"),
-        ("Zoom",           0.0, 1.0, 0.5, 0.05, "pol_zoom"),
-    ]),
-    ("tunnel_zoom", "Tunnel Zoom", "🔭", glitch_tunnel_zoom, [
-        ("Strati",         0.0, 1.0, 0.5, 0.05, "tz_layers"),
-        ("Velocità",       0.0, 1.0, 0.5, 0.05, "tz_speed"),
-        ("Color Shift",    0.0, 1.0, 0.3, 0.05, "tz_col"),
-    ]),
-    ("mirror_kal", "Mirror Kaleido.", "🪞", glitch_mirror_kaleidoscope, [
-        ("Specchi (4/6/8)", 0.0, 1.0, 0.3, 0.1,  "mk_mirrors"),
-        ("Rotazione",       0.0, 1.0, 0.0, 0.05, "mk_rot"),
-        ("Zoom",            0.0, 1.0, 0.5, 0.05, "mk_zoom"),
+    ("chromatic", "Chromatic Ab.", "🌈", glitch_chromatic, [
+        ("Forza",          0.0, 1.0, 0.5, 0.05, "chr_forza"),
+        ("Angolo",         0.0, 1.0, 0.0, 0.05, "chr_ang"),
+        ("Zoom aberr.",    0.0, 1.0, 0.3, 0.05, "chr_zoom"),
     ]),
     ("crosshatch", "Crosshatch", "✏️", glitch_crosshatch, [
         ("Densità",        0.0, 1.0, 0.5, 0.05, "ch_den"),
         ("Angolo",         0.0, 1.0, 0.3, 0.05, "ch_ang"),
         ("Spessore",       0.0, 1.0, 0.3, 0.05, "ch_thick"),
     ]),
-    ("stippling", "Stippling", "🔴", glitch_stippling, [
-        ("Densità",        0.0, 1.0, 0.5, 0.05, "st_den"),
-        ("Dim. Punto",     0.0, 1.0, 0.4, 0.05, "st_dot"),
-        ("Colore",         0.0, 1.0, 0.6, 0.05, "st_col"),
+    ("datamosh", "Datamosh", "📼", glitch_datamosh, [
+        ("Dim. Blocchi",   0.0, 2.0, 1.0, 0.1,  "dm_block"),
+        ("Decay",          0.0, 1.0, 0.5, 0.05, "dm_decay"),
+        ("N. Blocchi",     0.0, 1.0, 0.5, 0.05, "dm_num"),
     ]),
-    ("rutt_etra", "Rutt-Etra", "📺⚡", glitch_rutt_etra, [
-        ("Intensità",      0.0, 2.0, 1.0, 0.1, "re_int"),
-        ("Densità Linee",  0.2, 2.0, 1.0, 0.1, "re_spc"),
-        ("Spostamento",    0.0, 2.0, 1.0, 0.1, "re_dsp"),
+    ("destruction_art", "Destruction Art", "✂️", glitch_destruction_art, [
+        ("Tagli",          0.0, 1.0, 0.5, 0.05, "da_cuts"),
+        ("Scatter",        0.0, 1.0, 0.4, 0.05, "da_scatter"),
+        ("Asse (0=H 1=V)", 0.0, 1.0, 0.0, 0.5,  "da_asse"),
+    ]),
+    ("displacement_map", "Displacement Map", "🌊", glitch_displacement_map, [
+        ("Forza",          0.0, 1.0, 0.5, 0.05, "dsp_forza"),
+        ("Blur Scala",     0.0, 1.0, 0.4, 0.05, "dsp_blur"),
+        ("Canale (R/G/B)", 0.0, 1.0, 0.0, 0.5,  "dsp_canale"),
+    ]),
+    ("distruttivo", "Distruttivo", "💥", glitch_distruttivo, [
+        ("Dim. Blocchi",   0.0, 2.0, 1.0, 0.1,  "dest_size"),
+        ("Num. Blocchi",   0.0, 2.0, 1.0, 0.1,  "dest_num"),
+        ("Spostamento",    0.0, 2.0, 1.0, 0.1,  "dest_disp"),
+    ]),
+    ("drip", "Drip Sort", "🌊💧", glitch_drip, [
+        ("Soglia lum.",    0.0, 1.0, 0.3, 0.05, "drip_soglia"),
+        ("Sep. RGB",       0.0, 1.0, 0.5, 0.05, "drip_rgb"),
+        ("Asse (0=V 1=H)", 0.0, 1.0, 0.0, 0.5,  "drip_asse"),
+    ]),
+    ("duotone", "Duotone", "🎭", glitch_duotone, [
+        ("Colore 1 (hue)", 0.0, 1.0, 0.1, 0.05, "dt_c1"),
+        ("Colore 2 (hue)", 0.0, 1.0, 0.6, 0.05, "dt_c2"),
+        ("Blend",          0.0, 1.0, 0.8, 0.05, "dt_blend"),
+    ]),
+    ("analogic", "Glitch Analogic", "📻", glitch_analogic, [
+        ("Sync Loss",      0.0, 1.0, 0.5, 0.05, "ag_sync"),
+        ("Color Bleed",    0.0, 1.0, 0.4, 0.05, "ag_bleed"),
+        ("Static",         0.0, 1.0, 0.3, 0.05, "ag_static"),
+    ]),
+    ("halftone", "Halftone", "🔵", glitch_halftone, [
+        ("Dim. Punto",     0.0, 1.0, 0.4, 0.05, "ht_size"),
+        ("Sfondo bianco",  0.0, 1.0, 1.0, 0.5,  "ht_sfondo"),
+        ("Colore",         0.0, 1.0, 0.7, 0.05, "ht_color"),
+    ]),
+    ("image_feedback", "Image Feedback", "📡🔁", glitch_image_feedback, [
+        ("Zoom",           0.0, 1.0, 0.5, 0.05, "fb_zoom"),
+        ("Iterazioni",     0.0, 1.0, 0.4, 0.05, "fb_iter"),
+        ("Decay",          0.0, 1.0, 0.5, 0.05, "fb_decay"),
+    ]),
+    ("mirror_kal", "Mirror Kaleido.", "🪞", glitch_mirror_kaleidoscope, [
+        ("Specchi (4/6/8)", 0.0, 1.0, 0.3, 0.1,  "mk_mirrors"),
+        ("Rotazione",       0.0, 1.0, 0.0, 0.05, "mk_rot"),
+        ("Zoom",            0.0, 1.0, 0.5, 0.05, "mk_zoom"),
+    ]),
+    ("moire", "Moire Pattern", "🔲", glitch_moire, [
+        ("Frequenza 1",    0.0, 1.0, 0.4, 0.05, "mo_f1"),
+        ("Frequenza 2",    0.0, 1.0, 0.6, 0.05, "mo_f2"),
+        ("Angolo",         0.0, 1.0, 0.3, 0.05, "mo_ang"),
+    ]),
+    ("neon_glow", "Neon Glow", "💡", glitch_neon_glow, [
+        ("Soglia bordi",   0.0, 1.0, 0.3, 0.05, "ng_thresh"),
+        ("Ampiezza glow",  0.0, 1.0, 0.5, 0.05, "ng_width"),
+        ("Colore (0-4)",   0.0, 1.0, 0.0, 0.25, "ng_color"),
+    ]),
+    ("noise", "Noise", "🌀", glitch_noise, [
+        ("Intensità",      0.0, 2.0, 1.0, 0.1,  "noise_int"),
+        ("Copertura",      0.0, 1.0, 0.7, 0.05, "noise_cov"),
+        ("Tipo (0=bande 0.5=pixel 1=onde)", 0.0, 1.0, 0.0, 0.01, "noise_tipo"),
+    ]),
+    ("oil_paint", "Oil Paint", "🖌️", glitch_oil_paint, [
+        ("Raggio",         0.0, 1.0, 0.3, 0.05, "op_rad"),
+        ("Livelli",        0.0, 1.0, 0.5, 0.05, "op_lev"),
+        ("Blend",          0.0, 1.0, 0.7, 0.05, "op_blend"),
+    ]),
+    ("op_art_circles", "Op Art Circles", "⭕", glitch_op_art_circles, [
+        ("Frequenza",      0.0, 1.0, 0.5, 0.05, "oa_freq"),
+        ("Contrasto",      0.0, 1.0, 0.6, 0.05, "oa_cont"),
+        ("Blend",          0.0, 1.0, 0.5, 0.05, "oa_blend"),
+    ]),
+    ("pixel_sort", "Pixel Sort", "🔀", glitch_pixel_sort, [
+        ("Soglia lum.",    0.0, 1.0, 0.4, 0.05, "ps_thresh"),
+        ("Asse (0=H 1=V)", 0.0, 1.0, 1.0, 0.5,  "ps_asse"),
+        ("Span max",       0.0, 1.0, 0.8, 0.05, "ps_span"),
+    ]),
+    ("polar", "Polar Coords", "🌀", glitch_polar, [
+        ("Forza",          0.0, 1.0, 0.6, 0.05, "pol_str"),
+        ("Rotazione",      0.0, 1.0, 0.0, 0.05, "pol_rot"),
+        ("Zoom",           0.0, 1.0, 0.5, 0.05, "pol_zoom"),
+    ]),
+    ("posterize", "Posterize", "🎨", glitch_posterize, [
+        ("Livelli",        0.0, 1.0, 0.4, 0.05, "po_lev"),
+        ("Dither",         0.0, 1.0, 0.4, 0.05, "po_dith"),
+        ("Color Shift",    0.0, 1.0, 0.3, 0.05, "po_col"),
+    ]),
+    ("psychedelic", "Psychedelic", "🔮", glitch_psychedelic, [
+        ("Hue Shift",      0.0, 1.0, 0.3, 0.05, "psy_hue"),
+        ("Saturazione",    0.0, 1.0, 0.5, 0.05, "psy_sat"),
+        ("Inversione",     0.0, 1.0, 0.0, 0.05, "psy_inv"),
     ]),
     ("retro_palette", "Retro Palette C64", "🕹️", glitch_retro_palette, [
         ("Intensità",      0.0, 2.0, 1.0, 0.1, "rp_int"),
         ("Dithering",      0.0, 1.0, 0.5, 0.05, "rp_dit"),
         ("Dim. Pixel",     0.2, 3.0, 1.0, 0.1, "rp_pix"),
     ]),
-    ("ascii_art", "ASCII Art", "🔤", glitch_ascii_art, [
-        ("Intensità",      0.0, 2.0, 1.0, 0.1, "as_int"),
-        ("Colore",         0.0, 1.0, 0.5, 0.05, "as_col"),
-        ("Dim. Cella",     0.2, 3.0, 1.0, 0.1, "as_cel"),
+    ("rutt_etra", "Rutt-Etra", "📺⚡", glitch_rutt_etra, [
+        ("Intensità",      0.0, 2.0, 1.0, 0.1, "re_int"),
+        ("Densità Linee",  0.2, 2.0, 1.0, 0.1, "re_spc"),
+        ("Spostamento",    0.0, 2.0, 1.0, 0.1, "re_dsp"),
+    ]),
+    ("scanline_burn", "Scanline Burn", "📟", glitch_scanline_burn, [
+        ("Intensità",      0.0, 2.0, 1.0, 0.1,  "sb_int"),
+        ("Densità",        0.0, 1.0, 0.4, 0.05, "sb_den"),
+        ("Color Bleed",    0.0, 1.0, 0.5, 0.05, "sb_bleed"),
+    ]),
+    ("solarize", "Solarize", "☀️", glitch_solarize, [
+        ("Soglia",         0.0, 1.0, 0.5, 0.05, "sol_thresh"),
+        ("Forza",          0.0, 1.0, 0.8, 0.05, "sol_str"),
+        ("Channel Split",  0.0, 1.0, 0.3, 0.05, "sol_ch"),
+    ]),
+    ("stippling", "Stippling", "🔴", glitch_stippling, [
+        ("Densità",        0.0, 1.0, 0.5, 0.05, "st_den"),
+        ("Dim. Punto",     0.0, 1.0, 0.4, 0.05, "st_dot"),
+        ("Colore",         0.0, 1.0, 0.6, 0.05, "st_col"),
+    ]),
+    ("thermal", "Thermal Camera", "🌡️", glitch_thermal, [
+        ("Palette (0-2)",  0.0, 1.0, 0.0, 0.5,  "th_pal"),
+        ("Rumore",         0.0, 1.0, 0.2, 0.05, "th_noise"),
+        ("Contrasto",      0.0, 1.0, 0.6, 0.05, "th_cont"),
+    ]),
+    ("tunnel_zoom", "Tunnel Zoom", "🔭", glitch_tunnel_zoom, [
+        ("Strati",         0.0, 1.0, 0.5, 0.05, "tz_layers"),
+        ("Velocità",       0.0, 1.0, 0.5, 0.05, "tz_speed"),
+        ("Color Shift",    0.0, 1.0, 0.3, 0.05, "tz_col"),
+    ]),
+    ("vhs", "VHS", "📺", glitch_vhs, [
+        ("Intensità",      0.0, 2.0, 1.0, 0.1,  "vhs_int"),
+        ("Scanlines",      0.0, 2.0, 1.0, 0.1,  "vhs_scan"),
+        ("Color Split",    0.0, 2.0, 1.0, 0.1,  "vhs_col"),
+    ]),
+    ("wave_warp", "Wave Warp", "〰️", glitch_wave_warp, [
+        ("Ampiezza",       0.0, 2.0, 1.0, 0.1,  "ww_amp"),
+        ("Frequenza",      0.0, 2.0, 1.0, 0.1,  "ww_freq"),
+        ("Asse (0=H 1=V)", 0.0, 1.0, 0.0, 0.5,  "ww_asse"),
     ]),
 ]
 
