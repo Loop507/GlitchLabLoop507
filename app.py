@@ -951,6 +951,84 @@ def glitch_stippling(img, densita=0.5, dim_punto=0.4, colore=0.6):
         st.error(f"Stippling: {e}"); return img
 
 
+def glitch_rutt_etra(img, intensity=1.0, line_spacing=1.0, displacement=1.0):
+    """Emulazione Rutt-Etra (scan processor video anni '70, tecnica di dominio pubblico):
+    ogni scanline viene ridisegnata con la posizione verticale spinta dalla luminosità
+    locale, mantenendo il colore reale per-pixel (non una media di riga) e un'alta densità
+    di linee, così l'intero frame viene trasformato e non solo un'area isolata."""
+    try:
+        img = img.convert("RGB")
+        arr = np.array(img, dtype=np.uint8)
+        h, w, _ = arr.shape
+        gray = (arr[:, :, 0]*0.299 + arr[:, :, 1]*0.587 + arr[:, :, 2]*0.114) / 255.0
+        step = int(np.clip(round(6 / max(0.2, line_spacing)), 1, 20))
+        max_disp = displacement * (h * 0.15)
+        canvas = np.zeros_like(arr)
+        xs = np.arange(w)
+
+        for y in range(0, h, step):
+            lum_row = gray[y, :]
+            new_ys = np.clip(y - lum_row * max_disp, 0, h - 1).astype(np.int32)
+            colors = arr[y, :]  # colore reale per-pixel della riga sorgente
+            canvas[new_ys, xs] = colors
+            ys_plus = np.clip(new_ys + 1, 0, h - 1)
+            canvas[ys_plus, xs] = colors  # piccolo spessore per continuità visiva
+
+        blend = float(np.clip((intensity / 3.0) ** 0.4, 0.02, 1.0))
+        out = arr.astype(np.float32) * (1 - blend) + canvas.astype(np.float32) * blend
+        return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
+    except Exception as e:
+        st.error(f"Rutt-Etra: {e}"); return img
+
+
+# Palette Commodore 64 (16 colori, valori RGB misurati da Philip "Pepto" Timmermann —
+# dati tecnici di riferimento standard, non contenuto creativo)
+RETRO_PALETTE_16 = np.array([
+    [0,0,0],[255,255,255],[104,55,43],[112,164,178],
+    [111,61,134],[88,141,67],[53,40,121],[184,199,111],
+    [111,79,37],[67,57,0],[154,103,89],[68,68,68],
+    [108,108,108],[154,210,132],[108,94,181],[149,149,149]
+], dtype=np.float32)
+
+_BAYER4 = np.array([
+    [ 0, 8, 2,10],
+    [12, 4,14, 6],
+    [ 3,11, 1, 9],
+    [15, 7,13, 5]
+], dtype=np.float32) / 16.0 - 0.5
+
+def glitch_retro_palette(img, intensity=1.0, dither=0.5, pixel_size=1.0):
+    """Retro Palette 16: pixelizzazione + quantizzazione sulla palette fissa a 16 colori del
+    Commodore 64, con dithering ordinato (Bayer) opzionale. Il quantizing avviene
+    sull'immagine già pixelizzata (bassa risoluzione) per performance."""
+    try:
+        img = img.convert("RGB")
+        arr = np.array(img, dtype=np.uint8)
+        h, w, _ = arr.shape
+        block = max(1, int(2 + 14 * (pixel_size / 3.0)))
+        sw, sh = max(1, w // block), max(1, h // block)
+        small = np.array(Image.fromarray(arr).resize((sw, sh), Image.BOX), dtype=np.float32)
+
+        rgb = small.copy()
+        if dither > 0.5:
+            tile = np.tile(_BAYER4, (sh // 4 + 1, sw // 4 + 1))[:sh, :sw]
+            spread = 40.0 * (dither - 0.5) * 2
+            rgb = rgb + tile[..., None] * spread
+
+        flat = rgb.reshape(-1, 3)
+        dists = np.sum((flat[:, None, :] - RETRO_PALETTE_16[None, :, :]) ** 2, axis=2)
+        nearest = np.argmin(dists, axis=1)
+        quantized_small = RETRO_PALETTE_16[nearest].reshape(sh, sw, 3).astype(np.uint8)
+
+        pixelated = np.array(Image.fromarray(quantized_small).resize((w, h), Image.NEAREST), dtype=np.uint8)
+
+        blend = float(np.clip((intensity / 3.0) ** 0.4, 0.02, 1.0))
+        out = arr.astype(np.float32) * (1 - blend) + pixelated.astype(np.float32) * blend
+        return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
+    except Exception as e:
+        st.error(f"Retro Palette: {e}"); return img
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  CATALOGO EFFETTI
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1101,6 +1179,16 @@ EFFECTS = [
         ("Dim. Punto",     0.0, 1.0, 0.4, 0.05, "st_dot"),
         ("Colore",         0.0, 1.0, 0.6, 0.05, "st_col"),
     ]),
+    ("rutt_etra", "Rutt-Etra", "📺⚡", glitch_rutt_etra, [
+        ("Intensità",      0.0, 2.0, 1.0, 0.1, "re_int"),
+        ("Densità Linee",  0.2, 2.0, 1.0, 0.1, "re_spc"),
+        ("Spostamento",    0.0, 2.0, 1.0, 0.1, "re_dsp"),
+    ]),
+    ("retro_palette", "Retro Palette C64", "🕹️", glitch_retro_palette, [
+        ("Intensità",      0.0, 2.0, 1.0, 0.1, "rp_int"),
+        ("Dithering",      0.0, 1.0, 0.5, 0.05, "rp_dit"),
+        ("Dim. Pixel",     0.2, 3.0, 1.0, 0.1, "rp_pix"),
+    ]),
 ]
 
 
@@ -1138,6 +1226,8 @@ EFFECT_QUOTES = {
     "mirror_kal":       "Gli specchi si sono moltiplicati. La simmetria e' diventata religione.",
     "crosshatch":       "Il tratteggio ha sostituito il colore. L'incisione non mente.",
     "stippling":        "Il punto e' la minima unita' di verita'. Milioni di punti, una sola immagine.",
+    "rutt_etra":        "Lo scanner ha riscritto la riga secondo la luce. Il segnale e' diventato forma.",
+    "retro_palette":    "Sedici colori bastano per ricordare tutto. Il pixel e' tornato all'origine.",
 }
 
 EFFECT_ENGINES = {
@@ -1170,6 +1260,8 @@ EFFECT_ENGINES = {
     "mirror_kal":       "radial_symmetry_engine",
     "crosshatch":       "hatch_render_engine",
     "stippling":        "pointillism_engine",
+    "rutt_etra":        "scan_luminance_engine",
+    "retro_palette":    "c64_palette_quantize_engine",
 }
 
 
