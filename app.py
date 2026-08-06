@@ -1078,6 +1078,61 @@ def glitch_ascii_art(img, intensity=1.0, colore=0.5, dim_cella=1.0):
         st.error(f"ASCII Art: {e}"); return img
 
 
+def glitch_temporal_bands(img, intensity=1.0, variazione=0.5, offset_temp=0.5):
+    """Temporal Band Slicer: la foto viene tagliata in bande orizzontali di altezza
+    variabile; ogni banda pesca i pixel da una "versione temporale" sintetica diversa
+    dell'immagine (micro-shift orizzontale + ricompressione JPEG), simulando lo
+    sfasamento tra bande tipico dello scan a righe / drop-out video analogico.
+    Adattamento foto-singola di TemporalBandSlicer (pensato per stream video),
+    coerente con l'uso già descritto per GlitchLab nel modulo originale."""
+    try:
+        img = img.convert("RGB")
+        arr = np.array(img, dtype=np.uint8)
+        h, w, _ = arr.shape
+
+        rng = np.random.RandomState(42)
+
+        # buffer sintetico di "frame temporali" a partire dalla foto singola
+        n_variants = max(2, int(3 + 6 * variazione))
+        buffer = [arr]
+        for _ in range(n_variants):
+            dx = rng.randint(-6, 7)
+            variant = np.roll(arr, dx, axis=1)
+            buf_io = io.BytesIO()
+            Image.fromarray(variant).save(buf_io, format="JPEG", quality=55)
+            buf_io.seek(0)
+            variant = np.array(Image.open(buf_io).convert("RGB"), dtype=np.uint8)
+            buffer.append(variant)
+
+        # altezze bande variabili (non uniformi), come nel modulo originale
+        min_band = max(4, int(6 + 10 * (1.0 - variazione)))
+        max_band = max(min_band + 4, int(20 + 90 * variazione))
+        heights = []
+        remaining = h
+        while remaining > 0:
+            bh = rng.randint(min_band, max_band + 1)
+            bh = min(bh, remaining)
+            heights.append(bh)
+            remaining -= bh
+
+        max_offset = max(1, int(1 + (len(buffer) - 1) * offset_temp))
+
+        sliced = arr.copy()
+        y = 0
+        for bh in heights:
+            y_end = min(y + bh, h)
+            offset = rng.randint(0, min(max_offset, len(buffer)))
+            source = buffer[-(offset + 1)]
+            sliced[y:y_end] = source[y:y_end]
+            y = y_end
+
+        blend = float(np.clip((intensity / 3.0) ** 0.4, 0.02, 1.0))
+        out = arr.astype(np.float32) * (1 - blend) + sliced.astype(np.float32) * blend
+        return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
+    except Exception as e:
+        st.error(f"Temporal Band Slicer: {e}"); return img
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  CATALOGO EFFETTI
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1223,6 +1278,11 @@ EFFECTS = [
         ("Dim. Punto",     0.0, 1.0, 0.4, 0.05, "st_dot"),
         ("Colore",         0.0, 1.0, 0.6, 0.05, "st_col"),
     ]),
+    ("temporal_bands", "Temporal Bands", "⏳🎞️", glitch_temporal_bands, [
+        ("Intensità",      0.0, 2.0, 1.0, 0.1,  "tbs_int"),
+        ("Variazione",     0.0, 1.0, 0.5, 0.05, "tbs_var"),
+        ("Offset Tempo.",  0.0, 1.0, 0.5, 0.05, "tbs_off"),
+    ]),
     ("thermal", "Thermal Camera", "🌡️", glitch_thermal, [
         ("Palette (0-2)",  0.0, 1.0, 0.0, 0.5,  "th_pal"),
         ("Rumore",         0.0, 1.0, 0.2, 0.05, "th_noise"),
@@ -1283,6 +1343,7 @@ EFFECT_QUOTES = {
     "rutt_etra":        "Lo scanner ha riscritto la riga secondo la luce. Il segnale e' diventato forma.",
     "retro_palette":    "Sedici colori bastano per ricordare tutto. Il pixel e' tornato all'origine.",
     "ascii_art":        "L'immagine e' diventata testo. Il carattere ha sostituito il colore.",
+    "temporal_bands":   "Ogni riga ricorda un istante diverso. Il tempo non e' piu' uno solo.",
 }
 
 EFFECT_ENGINES = {
@@ -1318,6 +1379,7 @@ EFFECT_ENGINES = {
     "rutt_etra":        "scan_luminance_engine",
     "retro_palette":    "c64_palette_quantize_engine",
     "ascii_art":        "glyph_luminance_engine",
+    "temporal_bands":   "temporal_band_slicer_engine",
 }
 
 
