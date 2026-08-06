@@ -1078,12 +1078,17 @@ def glitch_ascii_art(img, intensity=1.0, colore=0.5, dim_cella=1.0):
         st.error(f"ASCII Art: {e}"); return img
 
 
-def glitch_temporal_bands(img, intensity=1.0, variazione=0.5, offset_temp=0.5):
+def glitch_temporal_bands(img, intensity=0.7, ampiezza_bande=0.5, spostamento=0.6):
     """Temporal Band Slicer: la foto viene tagliata in bande orizzontali di altezza
     variabile; ciascuna banda viene ricollocata da una diversa posizione spaziale
-    della stessa immagine (spostamento orizzontale E verticale), senza alterare
-    colori, luminosita' o contrasto — puro displacement geometrico, come nello
-    scan a righe / drop-out di segnale video analogico."""
+    della stessa immagine (spostamento orizzontale E verticale ampio, come nel
+    riferimento Snorpey/Rosa Menkman), senza alterare colori, luminosita' o
+    contrasto — puro displacement geometrico, nessun blend, nessuna ricompressione.
+
+    intensity        : 0-1, probabilita' che una banda venga spostata (piu' alto = piu' bande "rotte")
+    ampiezza_bande   : 0-1, quanto sono grandi/irregolari le bande (0 = sottili e uniformi, 1 = larghe e caotiche)
+    spostamento      : 0-1, quanto lontano (in % di larghezza/altezza) puo' saltare una banda
+    """
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.uint8)
@@ -1091,14 +1096,17 @@ def glitch_temporal_bands(img, intensity=1.0, variazione=0.5, offset_temp=0.5):
 
         rng = np.random.RandomState(42)
 
-        shift_mult = float(np.clip(intensity, 0.2, 2.0))
-        max_shift_x = max(6, int(w * (0.03 + 0.22 * variazione) * shift_mult))
-        max_shift_y = max(4, int(h * (0.02 + 0.14 * variazione) * shift_mult))
-        prob_band = float(np.clip(0.3 + 0.6 * offset_temp, 0.1, 0.95))
+        # ampiezza massima dello spostamento, come frazione di w/h (arriva a coprire
+        # gran parte dell'immagine, cosi' una banda puo' "pescare" da una zona
+        # completamente diversa della foto, come nel riferimento)
+        max_shift_x = max(10, int(w * (0.05 + 0.55 * spostamento)))
+        max_shift_y = max(6, int(h * (0.03 + 0.45 * spostamento)))
 
-        # altezze bande variabili (non uniformi), come nel modulo originale
-        min_band = max(3, int(4 + 8 * (1.0 - variazione)))
-        max_band = max(min_band + 6, int(15 + 70 * variazione))
+        prob_band = float(np.clip(0.15 + 0.8 * intensity, 0.1, 0.95))
+
+        # altezze bande variabili (non uniformi)
+        min_band = max(4, int(6 + 10 * (1.0 - ampiezza_bande)))
+        max_band = max(min_band + 10, int(25 + 150 * ampiezza_bande))
         heights = []
         remaining = h
         while remaining > 0:
@@ -1269,9 +1277,9 @@ EFFECTS = [
         ("Colore",         0.0, 1.0, 0.6, 0.05, "st_col"),
     ]),
     ("temporal_bands", "Temporal Bands", "⏳🎞️", glitch_temporal_bands, [
-        ("Intensità",      0.0, 2.0, 1.0, 0.1,  "tbs_int"),
-        ("Variazione",     0.0, 1.0, 0.5, 0.05, "tbs_var"),
-        ("Offset Tempo.",  0.0, 1.0, 0.5, 0.05, "tbs_off"),
+        ("Intensità",       0.0, 1.0, 0.7, 0.05, "tbs_int"),
+        ("Ampiezza Bande",  0.0, 1.0, 0.5, 0.05, "tbs_amp"),
+        ("Spostamento",     0.0, 1.0, 0.6, 0.05, "tbs_spo"),
     ]),
     ("thermal", "Thermal Camera", "🌡️", glitch_thermal, [
         ("Palette (0-2)",  0.0, 1.0, 0.0, 0.5,  "th_pal"),
