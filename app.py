@@ -1390,7 +1390,47 @@ uploaded_file = st.file_uploader("📁 Carica un'immagine", type=["jpg", "jpeg",
 
 if uploaded_file is not None:
     try:
-        img = Image.open(uploaded_file).convert("RGB")
+        raw_img = Image.open(uploaded_file)
+
+        has_alpha = raw_img.mode in ("RGBA", "LA") or (
+            raw_img.mode == "P" and "transparency" in raw_img.info
+        )
+
+        if has_alpha:
+            bg_choice = st.radio(
+                "🖼️ PNG con trasparenza rilevata — colore di sfondo da usare:",
+                ["Bianco", "Nero", "Personalizzato"],
+                horizontal=True, key="alpha_bg_choice"
+            )
+            if bg_choice == "Bianco":
+                bg_color = (255, 255, 255)
+            elif bg_choice == "Nero":
+                bg_color = (0, 0, 0)
+            else:
+                bg_color = st.color_picker("Scegli colore sfondo", "#FFFFFF", key="alpha_bg_custom")
+                bg_color = tuple(int(bg_color.lstrip("#")[i:i+2], 16) for i in (0, 2, 4))
+
+            raw_img = raw_img.convert("RGBA")
+            original_alpha = raw_img.split()[-1]
+            background = Image.new("RGB", raw_img.size, bg_color)
+            background.paste(raw_img, mask=original_alpha)
+            img = background
+
+            keep_transparency = st.checkbox(
+                "🪟 Mantieni trasparenza originale nell'export (salva come PNG con alpha)",
+                value=False, key="keep_transparency"
+            )
+            st.caption("Nota: per effetti che spostano i pixel (VHS, RGB shift, glitch a blocchi) "
+                       "la trasparenza resta ancorata alla posizione originale, quindi ai bordi "
+                       "puoi notare un leggero disallineamento tra colore ed area trasparente.")
+        else:
+            img = raw_img.convert("RGB")
+            original_alpha = None
+            keep_transparency = False
+
+        transparency_toggled = st.session_state.get("_prev_keep_transparency") != keep_transparency
+        st.session_state["_prev_keep_transparency"] = keep_transparency
+
         st.image(img, caption="🖼️ Originale", width=350)
         st.info(f"Dimensioni: {img.size[0]} × {img.size[1]} px")
 
@@ -1435,10 +1475,17 @@ if uploaded_file is not None:
                     should_process
                     or (is_live_target and (params_changed or st.session_state.get(f"img_{key}") is None))
                     or (not live_mode and params_changed and st.session_state.get(f"img_{key}") is not None)
+                    or (transparency_toggled and st.session_state.get(f"img_{key}") is not None)
                 )
 
                 if needs_process:
                     result_img = fn(img, *vals)
+                    if keep_transparency and original_alpha is not None:
+                        result_img = result_img.convert("RGBA")
+                        alpha_to_apply = original_alpha
+                        if result_img.size != alpha_to_apply.size:
+                            alpha_to_apply = alpha_to_apply.resize(result_img.size)
+                        result_img.putalpha(alpha_to_apply)
                     st.session_state[f"img_{key}"]    = img_to_bytes(result_img)
                     st.session_state[f"rep_{key}"]    = make_report(
                         key, label, img.size, vals, [s[0] for s in sliders], ts)
