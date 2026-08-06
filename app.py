@@ -1080,11 +1080,10 @@ def glitch_ascii_art(img, intensity=1.0, colore=0.5, dim_cella=1.0):
 
 def glitch_temporal_bands(img, intensity=1.0, variazione=0.5, offset_temp=0.5):
     """Temporal Band Slicer: la foto viene tagliata in bande orizzontali di altezza
-    variabile; ogni banda pesca i pixel da una "versione temporale" sintetica diversa
-    dell'immagine (shift orizzontale + deriva cromatica cumulativa + ricompressione
-    JPEG), simulando lo sfasamento tra bande tipico dello scan a righe / drop-out
-    video analogico. Adattamento foto-singola di TemporalBandSlicer (pensato per
-    stream video), coerente con l'uso già descritto per GlitchLab nel modulo originale."""
+    variabile; ciascuna banda viene ricollocata da una diversa posizione spaziale
+    della stessa immagine (spostamento orizzontale E verticale), senza alterare
+    colori, luminosita' o contrasto — puro displacement geometrico, come nello
+    scan a righe / drop-out di segnale video analogico."""
     try:
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.uint8)
@@ -1092,26 +1091,10 @@ def glitch_temporal_bands(img, intensity=1.0, variazione=0.5, offset_temp=0.5):
 
         rng = np.random.RandomState(42)
 
-        # buffer sintetico di "frame temporali" a partire dalla foto singola;
-        # ogni variante deriva dalla precedente (deriva cumulativa) cosi' i frame
-        # piu' "lontani nel tempo" sono visibilmente piu' diversi dall'originale
-        n_variants = max(3, int(3 + 6 * variazione))
-        max_shift = max(6, int(w * (0.03 + 0.15 * variazione)))
-        jpeg_q = int(max(15, 70 - 50 * variazione))
-
-        buffer = [arr]
-        cur = arr
-        for _ in range(n_variants):
-            dx = rng.randint(-max_shift, max_shift + 1)
-            variant = np.roll(cur, dx, axis=1)
-            color_drift = rng.randint(-18, 19, size=3)
-            variant = np.clip(variant.astype(np.int16) + color_drift, 0, 255).astype(np.uint8)
-            buf_io = io.BytesIO()
-            Image.fromarray(variant).save(buf_io, format="JPEG", quality=jpeg_q)
-            buf_io.seek(0)
-            variant = np.array(Image.open(buf_io).convert("RGB"), dtype=np.uint8)
-            buffer.append(variant)
-            cur = variant
+        shift_mult = float(np.clip(intensity, 0.2, 2.0))
+        max_shift_x = max(6, int(w * (0.03 + 0.22 * variazione) * shift_mult))
+        max_shift_y = max(4, int(h * (0.02 + 0.14 * variazione) * shift_mult))
+        prob_band = float(np.clip(0.3 + 0.6 * offset_temp, 0.1, 0.95))
 
         # altezze bande variabili (non uniformi), come nel modulo originale
         min_band = max(3, int(4 + 8 * (1.0 - variazione)))
@@ -1124,20 +1107,18 @@ def glitch_temporal_bands(img, intensity=1.0, variazione=0.5, offset_temp=0.5):
             heights.append(bh)
             remaining -= bh
 
-        max_offset = max(1, int(1 + (len(buffer) - 1) * offset_temp))
-
-        sliced = arr.copy()
+        out = arr.copy()
         y = 0
         for bh in heights:
             y_end = min(y + bh, h)
-            offset = rng.randint(0, min(max_offset, len(buffer)))
-            source = buffer[-(offset + 1)]
-            sliced[y:y_end] = source[y:y_end]
+            if rng.random() < prob_band:
+                dx = rng.randint(-max_shift_x, max_shift_x + 1)
+                dy = rng.randint(-max_shift_y, max_shift_y + 1)
+                shifted = np.roll(arr, (dy, dx), axis=(0, 1))  # solo traslazione, nessun cambio colore
+                out[y:y_end] = shifted[y:y_end]
             y = y_end
 
-        blend = float(np.clip(intensity / 2.0, 0.1, 1.0))
-        out = arr.astype(np.float32) * (1 - blend) + sliced.astype(np.float32) * blend
-        return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
+        return Image.fromarray(out)
     except Exception as e:
         st.error(f"Temporal Band Slicer: {e}"); return img
 
