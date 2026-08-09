@@ -1078,34 +1078,23 @@ def glitch_ascii_art(img, intensity=1.0, colore=0.5, dim_cella=1.0):
         st.error(f"ASCII Art: {e}"); return img
 
 
-def glitch_pop_art_warhol(img, contrasto=0.6, griglia=0.3, misregistrazione=0.4):
+def glitch_pop_art_warhol(img, contrasto=0.6, palette=0.0, misregistrazione=0.4):
     """Pop Art stile serigrafia Warhol: l'immagine viene posterizzata in poche
-    fasce tonali e ripetuta in una griglia (2x2 / 3x3 / 4x4), ogni riquadro con
-    una palette acida diversa — come nelle stampe multiple (Marilyn, Flowers).
-    Aggiunge una leggera mis-registrazione dei canali per l'effetto "fuori
-    registro" tipico della serigrafia manuale.
+    fasce tonali e ricolorata con una palette acida — come nelle stampe
+    serigrafiche (Marilyn, Flowers). Foto singola, dimensione originale
+    invariata (utile per poi affiancare piu' versioni con palette diverse
+    in un collage/griglia fatto manualmente). Aggiunge una leggera
+    mis-registrazione dei canali per l'effetto "fuori registro" tipico
+    della serigrafia manuale.
 
     contrasto         : 0-1, quante fasce tonali (piu' alto = meno fasce, look piu' netto/pop)
-    griglia           : 0-1, dimensione della griglia (0=2x2, 0.5=3x3, 1=4x4)
-    misregistrazione  : 0-1, quanto i canali R/B sono disallineati per riquadro
+    palette           : 0-1, seleziona una delle combinazioni di colori acidi
+    misregistrazione  : 0-1, quanto i canali R/B sono disallineati
     """
     try:
         img = img.convert("RGB")
-        w0, h0 = img.size
-
-        if griglia < 0.34:
-            n = 2
-        elif griglia < 0.67:
-            n = 3
-        else:
-            n = 4
-
-        max_tile = 500
-        tile_w = min(max_tile, w0)
-        tile_h = min(max_tile, h0)
-        tile_img = img.resize((tile_w, tile_h), Image.LANCZOS)
-
-        arr = np.array(tile_img, dtype=np.float32)
+        arr = np.array(img, dtype=np.float32)
+        h, w, _ = arr.shape
         lum = (arr[:, :, 0] * 0.299 + arr[:, :, 1] * 0.587 + arr[:, :, 2] * 0.114) / 255.0
 
         n_levels = max(2, min(4, int(round(4 - 2 * contrasto))))
@@ -1121,31 +1110,19 @@ def glitch_pop_art_warhol(img, contrasto=0.6, griglia=0.3, misregistrazione=0.4)
             [(25, 25, 0), (0, 210, 130), (255, 60, 160), (255, 255, 255)],
         ]
 
-        canvas = Image.new("RGB", (tile_w * n, tile_h * n))
+        pal_idx = int(np.clip(palette, 0, 0.999) * len(PALETTES))
+        pal_full = PALETTES[pal_idx]
+        idxs = np.linspace(0, 3, n_levels).round().astype(int)
+        colors = np.array([pal_full[k] for k in idxs], dtype=np.float32)
+        out_arr = colors[band]
 
-        for i in range(n):
-            for j in range(n):
-                pal_full = PALETTES[(i * n + j) % len(PALETTES)]
-                idxs = np.linspace(0, 3, n_levels).round().astype(int)
-                colors = np.array([pal_full[k] for k in idxs], dtype=np.float32)
-                tile_arr = colors[band]
+        if misregistrazione > 0.02:
+            shift = int(2 + 14 * misregistrazione)
+            out_arr = out_arr.copy()
+            out_arr[:, :, 0] = np.roll(out_arr[:, :, 0], shift, axis=1)
+            out_arr[:, :, 2] = np.roll(out_arr[:, :, 2], -shift, axis=0)
 
-                if misregistrazione > 0.02:
-                    shift = int(2 + 14 * misregistrazione)
-                    tile_arr = tile_arr.copy()
-                    tile_arr[:, :, 0] = np.roll(tile_arr[:, :, 0], shift, axis=1)
-                    tile_arr[:, :, 2] = np.roll(tile_arr[:, :, 2], -shift, axis=0)
-
-                tile_final = Image.fromarray(np.clip(tile_arr, 0, 255).astype(np.uint8))
-                canvas.paste(tile_final, (j * tile_w, i * tile_h))
-
-        max_out = 1600
-        cw, ch = canvas.size
-        if max(cw, ch) > max_out:
-            scale = max_out / max(cw, ch)
-            canvas = canvas.resize((int(cw * scale), int(ch * scale)), Image.LANCZOS)
-
-        return canvas
+        return Image.fromarray(np.clip(out_arr, 0, 255).astype(np.uint8))
     except Exception as e:
         st.error(f"Pop Art Warhol: {e}"); return img
 
@@ -1314,8 +1291,8 @@ EFFECTS = [
         ("Zoom",           0.0, 1.0, 0.5, 0.05, "pol_zoom"),
     ]),
     ("pop_art_warhol", "Pop Art Warhol", "🍅", glitch_pop_art_warhol, [
-        ("Contrasto",      0.0, 1.0, 0.6, 0.05, "pa_cont"),
-        ("Griglia",        0.0, 1.0, 0.3, 0.34, "pa_grid"),
+        ("Contrasto",        0.0, 1.0, 0.6, 0.05, "pa_cont"),
+        ("Palette (0-6)",    0.0, 1.0, 0.0, 0.143, "pa_pal"),
         ("Misregistrazione", 0.0, 1.0, 0.4, 0.05, "pa_mis"),
     ]),
     ("posterize", "Posterize", "🎨", glitch_posterize, [
@@ -1406,7 +1383,7 @@ EFFECT_QUOTES = {
     "drip":             "La gravita' ha scelto i colori. Il pixel ha obbedito alla caduta.",
     "oil_paint":        "Il pennello ha ridisegnato la realta'. La texture ha vinto sul pixel.",
     "posterize":        "Il colore e' stato ridotto all'essenziale. La serigrafia non perdona.",
-    "pop_art_warhol":   "Quindici minuti di celebrita', moltiplicati in griglia. La serie e' l'opera.",
+    "pop_art_warhol":   "Quindici minuti di celebrita', fissati in un fotogramma acido. La serigrafia non perdona.",
     "neon_glow":        "I bordi si sono accesi. Il buio esalta la luce.",
     "duotone":          "Due colori soltanto. La sintesi e' la forma piu' alta.",
     "solarize":         "La luce si e' invertita. La camera oscura ha tradito l'originale.",
