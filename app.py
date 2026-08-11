@@ -1127,346 +1127,6 @@ def glitch_pop_art_warhol(img, contrasto=0.6, palette=0.0, misregistrazione=0.4)
         st.error(f"Pop Art Warhol: {e}"); return img
 
 
-def glitch_mondrian(img, densita=0.5, spessore=0.5, blend=0.5):
-    """Suddivisione geometrica alla Mondrian: partizione ricorsiva dell'immagine
-    in rettangoli, alcuni riempiti con colori primari piatti (rosso/blu/giallo)
-    o nero pieno, separati da linee nere spesse. Il risultato viene fuso con
-    la foto originale. Puro algoritmo di space-partitioning, nessuna AI.
-
-    densita   : 0-1, quante suddivisioni (piu' alto = griglia piu' fitta)
-    spessore  : 0-1, spessore delle linee nere
-    blend     : 0-1, 0=foto originale, 1=astrazione geometrica pura
-    """
-    try:
-        img = img.convert("RGB")
-        arr = np.array(img, dtype=np.float32)
-        h, w, _ = arr.shape
-
-        min_size = max(24, int((1.0 - densita) * min(h, w) * 0.45) + 20)
-        rng = random.Random(int(densita * 1000) + int(spessore * 1000) * 7 + w * 13 + h * 17)
-
-        PRIMARY = [(214, 40, 40), (25, 65, 165), (245, 205, 20)]
-        line_th = max(2, int(2 + 14 * spessore))
-
-        rects = []
-        stack = [(0, 0, w, h, 0)]
-        max_depth = 6
-        min_depth = 2
-        while stack:
-            x, y, rw, rh, depth = stack.pop()
-            too_small = rw < min_size or rh < min_size
-            early_stop = depth >= min_depth and rng.random() < 0.15
-            if too_small or depth >= max_depth or early_stop:
-                rects.append((x, y, rw, rh))
-                continue
-            if rw > rh:
-                cut = int(rw * rng.uniform(0.35, 0.65))
-                stack.append((x, y, cut, rh, depth + 1))
-                stack.append((x + cut, y, rw - cut, rh, depth + 1))
-            else:
-                cut = int(rh * rng.uniform(0.35, 0.65))
-                stack.append((x, y, rw, cut, depth + 1))
-                stack.append((x, y + cut, rw, rh - cut, depth + 1))
-
-        gen = np.full((h, w, 3), 245.0, dtype=np.float32)
-
-        for (x, y, rw, rh) in rects:
-            if rw <= 0 or rh <= 0:
-                continue
-            patch = arr[y:y + rh, x:x + rw]
-            avg = patch.mean(axis=(0, 1)) if patch.size else np.array([245., 245., 245.])
-            r = rng.random()
-            if r < 0.18:
-                color = np.array(PRIMARY[rng.randrange(3)], dtype=np.float32)
-            elif r < 0.30:
-                color = np.array([15., 15., 15.], dtype=np.float32)
-            else:
-                color = avg * 0.5 + np.array([245., 245., 245.]) * 0.5
-            gen[y:y + rh, x:x + rw] = color
-
-        for (x, y, rw, rh) in rects:
-            x2, y2 = min(w, x + rw), min(h, y + rh)
-            t = line_th
-            gen[y:min(h, y + t), x:x2] = 10.0
-            gen[max(0, y2 - t):y2, x:x2] = 10.0
-            gen[y:y2, x:min(w, x + t)] = 10.0
-            gen[y:y2, max(0, x2 - t):x2] = 10.0
-
-        result = arr * (1 - blend) + gen * blend
-        return Image.fromarray(np.clip(result, 0, 255).astype(np.uint8))
-    except Exception as e:
-        st.error(f"Mondrian: {e}"); return img
-
-
-def glitch_van_gogh_swirl(img, ampiezza=0.5, frequenza=0.5, turbolenza=0.5):
-    """Campo di flusso sinusoidale che deforma i pixel in vortici, imitando
-    pennellate mosse e circolari. Somma di onde sinusoidali a frequenze
-    diverse fatta a mano, senza librerie di rumore esterne.
-
-    ampiezza    : 0-1, intensita' della distorsione
-    frequenza   : 0-1, frequenza base del campo di vortici
-    turbolenza  : 0-1, quante armoniche extra si sommano (piu' caotico)
-    """
-    try:
-        img = img.convert("RGB")
-        arr = np.array(img, dtype=np.float32)
-        h, w, _ = arr.shape
-
-        ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
-        nx = xs / w - 0.5
-        ny = ys / h - 0.5
-
-        base_f = 3.0 + 10.0 * frequenza
-        angle = np.sin(nx * base_f * np.pi) * np.cos(ny * base_f * np.pi) * np.pi
-
-        n_harm = 1 + int(4 * turbolenza)
-        for k in range(2, 2 + n_harm):
-            angle = angle + (np.sin(nx * base_f * k * np.pi + k) * np.cos(ny * base_f * k * np.pi)) * (np.pi / k)
-
-        amp_px = 2 + 40 * ampiezza
-        dx = np.cos(angle) * amp_px
-        dy = np.sin(angle) * amp_px
-
-        src_x = np.clip(xs + dx, 0, w - 1).astype(np.int32)
-        src_y = np.clip(ys + dy, 0, h - 1).astype(np.int32)
-
-        out = arr[src_y, src_x]
-        return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
-    except Exception as e:
-        st.error(f"Van Gogh Swirl: {e}"); return img
-
-
-def glitch_rothko(img, fasce=0.5, morbidezza=0.5, saturazione=0.5):
-    """Riduce l'immagine a grandi campi cromatici orizzontali sfumati, come nei
-    color field di Rothko: poche fasce di colore piatto, bordi ammorbiditi con
-    blur gaussiano progressivo, saturazione regolabile.
-
-    fasce         : 0-1, numero di fasce orizzontali (2-5)
-    morbidezza    : 0-1, quanto sfumati sono i bordi tra le fasce
-    saturazione   : 0-1, intensita' del colore (0=desaturato, 1=acceso)
-    """
-    try:
-        img = img.convert("RGB")
-        w, h = img.size
-        n_bands = max(2, min(5, int(round(2 + 3 * fasce))))
-
-        arr = np.array(img, dtype=np.float32)
-        band_h = h // n_bands
-        flat = np.zeros_like(arr)
-        for i in range(n_bands):
-            y0 = i * band_h
-            y1 = h if i == n_bands - 1 else (i + 1) * band_h
-            avg = arr[y0:y1].mean(axis=(0, 1))
-            flat[y0:y1] = avg
-
-        flat_img = Image.fromarray(np.clip(flat, 0, 255).astype(np.uint8))
-        radius = 3 + int(60 * morbidezza)
-        flat_img = flat_img.filter(ImageFilter.GaussianBlur(radius=radius))
-
-        flat_arr = np.array(flat_img, dtype=np.float32)
-        gray = (flat_arr[:, :, 0] * 0.299 + flat_arr[:, :, 1] * 0.587 + flat_arr[:, :, 2] * 0.114)
-        gray = np.stack([gray] * 3, axis=-1)
-        sat = np.clip(saturazione * 1.6, 0, 2.0)
-        out_arr = gray + (flat_arr - gray) * sat
-
-        return Image.fromarray(np.clip(out_arr, 0, 255).astype(np.uint8))
-    except Exception as e:
-        st.error(f"Rothko: {e}"); return img
-
-
-def glitch_lichtenstein_comic(img, spessore=0.5, dim_puntini=0.5, saturazione=0.5):
-    """Fumetto pop: contorni neri spessi (edge detection Sobel manuale) +
-    riempimento a puntini colorati (Ben-Day dots) + palette piatta a poche
-    tonalita' sature, come le tele di Lichtenstein.
-
-    spessore      : 0-1, spessore del contorno nero
-    dim_puntini   : 0-1, dimensione dei puntini di retino
-    saturazione   : 0-1, intensita' del colore
-    """
-    try:
-        img = img.convert("RGB")
-        arr = np.array(img, dtype=np.float32)
-        h, w, _ = arr.shape
-        gray = (arr[:, :, 0] * 0.299 + arr[:, :, 1] * 0.587 + arr[:, :, 2] * 0.114)
-
-        kx = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=np.float32)
-        ky = np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=np.float32)
-
-        gp = np.pad(gray, 1, mode='edge')
-        gx = np.zeros_like(gray)
-        gy = np.zeros_like(gray)
-        for i in range(3):
-            for j in range(3):
-                gx += kx[i, j] * gp[i:i + h, j:j + w]
-                gy += ky[i, j] * gp[i:i + h, j:j + w]
-        mag = np.sqrt(gx ** 2 + gy ** 2)
-        mag = mag / (mag.max() + 1e-6)
-        edge_thresh = 0.15 + 0.1 * (1 - spessore)
-        edges = mag > edge_thresh
-
-        dil = int(1 + 4 * spessore)
-        edge_mask = edges
-        if dil > 1:
-            em = edges.copy()
-            for _ in range(dil):
-                shifted = np.zeros_like(em)
-                shifted[1:, :] |= em[:-1, :]
-                shifted[:-1, :] |= em[1:, :]
-                shifted[:, 1:] |= em[:, :-1]
-                shifted[:, :-1] |= em[:, 1:]
-                em = em | shifted
-            edge_mask = em
-
-        n_levels = 4
-        lum = gray / 255.0
-        band = np.clip((lum * n_levels).astype(int), 0, n_levels - 1)
-        COMIC_PAL = [(255, 235, 59), (255, 87, 34), (33, 150, 243), (255, 255, 255)]
-        colors = np.array(COMIC_PAL, dtype=np.float32)
-        flat = colors[band]
-
-        cell = max(3, int(3 + 14 * dim_puntini))
-        dots = flat.copy()
-        for y in range(0, h, cell):
-            for x in range(0, w, cell):
-                patch_lum = lum[y:y + cell, x:x + cell]
-                if patch_lum.size == 0:
-                    continue
-                avg_l = patch_lum.mean()
-                radius = (cell / 2) * (1.0 - avg_l) * 1.6
-                if radius < 1:
-                    continue
-                cy = y + cell // 2
-                cx = x + cell // 2
-                y0, y1 = max(0, cy - cell), min(h, cy + cell)
-                x0, x1 = max(0, cx - cell), min(w, cx + cell)
-                yy, xx = np.ogrid[y0:y1, x0:x1]
-                mask = (xx - cx) ** 2 + (yy - cy) ** 2 <= radius ** 2
-                dots[y0:y1, x0:x1][mask] = [20, 20, 20]
-
-        gray3 = np.stack([gray] * 3, axis=-1)
-        sat = np.clip(saturazione * 1.6, 0, 2.0)
-        colored = gray3 + (dots - gray3) * sat
-        colored[edge_mask] = [10, 10, 10]
-
-        return Image.fromarray(np.clip(colored, 0, 255).astype(np.uint8))
-    except Exception as e:
-        st.error(f"Lichtenstein Comic: {e}"); return img
-
-
-def glitch_klimt_mosaico(img, densita_patch=0.5, intensita_oro=0.5, contrasto=0.5):
-    """Mosaico decorativo alla Klimt: patch irregolari (Voronoi semplificato su
-    seed jitterati), alcune ricoperte da oro/bronzo metallico, separate da
-    sottili linee scure (le "fughe" del mosaico). Le zone piu' luminose della
-    foto tendono a restare naturali (il "soggetto"), quelle piu' scure
-    diventano oro (lo "sfondo decorativo"). Puro algoritmo, nessuna AI.
-
-    densita_patch : 0-1, quante tessere Voronoi (piu' alto = mosaico piu' fitto)
-    intensita_oro : 0-1, quanta superficie viene coperta da oro/bronzo
-    contrasto     : 0-1, soglia tra zone "naturali" e zone dorate
-    """
-    try:
-        img = img.convert("RGB")
-        arr = np.array(img, dtype=np.float32)
-        h, w, _ = arr.shape
-
-        n_cells = max(6, int(6 + 34 * densita_patch))
-        rng = random.Random(int(densita_patch * 1000) + int(intensita_oro * 1000) * 7 + w * 13 + h * 17)
-
-        gx = max(2, int(round(np.sqrt(n_cells * w / h))))
-        gy = max(2, int(round(np.sqrt(n_cells * h / w))))
-        cell_w = w / gx
-        cell_h = h / gy
-        seeds = []
-        for iy in range(gy):
-            for ix in range(gx):
-                sx = (ix + 0.5 + rng.uniform(-0.35, 0.35)) * cell_w
-                sy = (iy + 0.5 + rng.uniform(-0.35, 0.35)) * cell_h
-                seeds.append((sx, sy))
-        seeds = np.array(seeds, dtype=np.float32)
-
-        low_max = 260
-        scale = min(1.0, low_max / max(h, w))
-        lh, lw = max(1, int(h * scale)), max(1, int(w * scale))
-        ys_l, xs_l = np.mgrid[0:lh, 0:lw].astype(np.float32)
-        ys_l = ys_l / scale
-        xs_l = xs_l / scale
-        d2 = (xs_l.reshape(-1, 1) - seeds[:, 0].reshape(1, -1)) ** 2 + \
-             (ys_l.reshape(-1, 1) - seeds[:, 1].reshape(1, -1)) ** 2
-        label_low = np.argmin(d2, axis=1).reshape(lh, lw).astype(np.int32)
-        label_img = Image.fromarray(label_low, mode='I').resize((w, h), Image.NEAREST)
-        label = np.array(label_img, dtype=np.int32)
-
-        out = arr.copy()
-        GOLD_VARIANTS = [(212, 175, 55), (184, 115, 51), (230, 190, 90), (160, 120, 40)]
-        thresh = 0.30 + 0.35 * (1.0 - contrasto)
-
-        for lbl in np.unique(label):
-            mask = label == lbl
-            if not mask.any():
-                continue
-            avg = arr[mask].mean(axis=0)
-            lum = (avg[0] * 0.299 + avg[1] * 0.587 + avg[2] * 0.114) / 255.0
-            is_gold = (lum < thresh) and (rng.random() < intensita_oro * 1.2)
-            if is_gold:
-                color = np.array(GOLD_VARIANTS[rng.randrange(len(GOLD_VARIANTS))], dtype=np.float32)
-            else:
-                color = avg
-            out[mask] = color
-
-        edges = np.zeros((h, w), dtype=bool)
-        edges[1:, :] |= label[1:, :] != label[:-1, :]
-        edges[:, 1:] |= label[:, 1:] != label[:, :-1]
-        out[edges] = out[edges] * 0.35
-
-        return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
-    except Exception as e:
-        st.error(f"Klimt Mosaico: {e}"); return img
-
-
-def glitch_munch_onde(img, intensita=0.5, raggio=0.5, saturazione=0.5):
-    """Distorsione a onde concentriche radiali centrate sull'immagine, con
-    palette virata verso toni caldi accesi nelle zone chiare e toni freddi
-    innaturali nelle ombre, come nell'espressionismo di Munch. Displacement
-    radiale puramente trigonometrico, nessuna libreria esterna.
-
-    intensita   : 0-1, ampiezza della distorsione ondulatoria
-    raggio      : 0-1, frequenza delle onde concentriche
-    saturazione : 0-1, quanto la palette vira verso toni caldi/freddi innaturali
-    """
-    try:
-        img = img.convert("RGB")
-        arr = np.array(img, dtype=np.float32)
-        h, w, _ = arr.shape
-
-        cy, cx = h / 2.0, w / 2.0
-        ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
-        dx = xs - cx
-        dy = ys - cy
-        r = np.sqrt(dx ** 2 + dy ** 2)
-        theta = np.arctan2(dy, dx)
-
-        k = 0.02 + 0.15 * raggio
-        amp_px = 3 + 30 * intensita
-        disp = amp_px * np.sin(r * k)
-
-        src_x = np.clip(xs + disp * np.cos(theta), 0, w - 1).astype(np.int32)
-        src_y = np.clip(ys + disp * np.sin(theta), 0, h - 1).astype(np.int32)
-        out = arr[src_y, src_x]
-
-        lum = (out[:, :, 0] * 0.299 + out[:, :, 1] * 0.587 + out[:, :, 2] * 0.114) / 255.0
-        warm = lum[:, :, np.newaxis]
-        boost = saturazione
-
-        out2 = out.copy()
-        out2[:, :, 0] = out[:, :, 0] + boost * 60 * warm[:, :, 0]
-        out2[:, :, 2] = out[:, :, 2] + boost * 60 * (1 - warm[:, :, 0])
-        out2[:, :, 1] = out[:, :, 1] - boost * 20 * (1 - warm[:, :, 0])
-
-        return Image.fromarray(np.clip(out2, 0, 255).astype(np.uint8))
-    except Exception as e:
-        st.error(f"Munch Onde: {e}"); return img
-
-
 def glitch_temporal_bands(img, intensity=0.7, ampiezza_bande=0.5, spostamento=0.6):
     """Temporal Band Slicer: la foto viene tagliata in bande orizzontali di altezza
     variabile; ciascuna banda viene ricollocata da una diversa posizione spaziale
@@ -1635,36 +1295,6 @@ EFFECTS = [
         ("Palette (0-6)",    0.0, 1.0, 0.0, 0.143, "pa_pal"),
         ("Misregistrazione", 0.0, 1.0, 0.4, 0.05, "pa_mis"),
     ]),
-    ("mondrian", "Mondrian Grid", "🟥", glitch_mondrian, [
-        ("Densita'",   0.0, 1.0, 0.5, 0.05, "mo_dens"),
-        ("Spessore",   0.0, 1.0, 0.5, 0.05, "mo_th"),
-        ("Blend",      0.0, 1.0, 0.5, 0.05, "mo_blend"),
-    ]),
-    ("van_gogh_swirl", "Van Gogh Swirl", "🌀", glitch_van_gogh_swirl, [
-        ("Ampiezza",     0.0, 1.0, 0.5, 0.05, "vg_amp"),
-        ("Frequenza",    0.0, 1.0, 0.5, 0.05, "vg_freq"),
-        ("Turbolenza",   0.0, 1.0, 0.5, 0.05, "vg_turb"),
-    ]),
-    ("rothko", "Rothko Color Field", "🟧", glitch_rothko, [
-        ("Fasce",         0.0, 1.0, 0.5, 0.05, "ro_bands"),
-        ("Morbidezza",    0.0, 1.0, 0.5, 0.05, "ro_soft"),
-        ("Saturazione",   0.0, 1.0, 0.5, 0.05, "ro_sat"),
-    ]),
-    ("lichtenstein_comic", "Lichtenstein Comic", "💥", glitch_lichtenstein_comic, [
-        ("Spessore contorno", 0.0, 1.0, 0.5, 0.05, "li_th"),
-        ("Dim. puntini",      0.0, 1.0, 0.5, 0.05, "li_dot"),
-        ("Saturazione",       0.0, 1.0, 0.5, 0.05, "li_sat"),
-    ]),
-    ("klimt_mosaico", "Klimt Mosaico", "🟨", glitch_klimt_mosaico, [
-        ("Densita' tessere", 0.0, 1.0, 0.5, 0.05, "kl_dens"),
-        ("Intensita' oro",   0.0, 1.0, 0.5, 0.05, "kl_gold"),
-        ("Contrasto",        0.0, 1.0, 0.5, 0.05, "kl_cont"),
-    ]),
-    ("munch_onde", "Munch Onde Espressioniste", "🌊", glitch_munch_onde, [
-        ("Intensita'",    0.0, 1.0, 0.5, 0.05, "mu_int"),
-        ("Raggio",        0.0, 1.0, 0.5, 0.05, "mu_rad"),
-        ("Saturazione",   0.0, 1.0, 0.5, 0.05, "mu_sat"),
-    ]),
     ("posterize", "Posterize", "🎨", glitch_posterize, [
         ("Livelli",        0.0, 1.0, 0.4, 0.05, "po_lev"),
         ("Dither",         0.0, 1.0, 0.4, 0.05, "po_dith"),
@@ -1733,89 +1363,77 @@ EFFECTS = [
 # ══════════════════════════════════════════════════════════════════════════════
 
 EFFECT_QUOTES = {
-    "vhs":              "Il nastro ha consumato i colori. La memoria e' distorta.",
-    "distruttivo":      "I blocchi si sono spostati. La struttura non esiste piu'.",
-    "noise":            "Il segnale e' collassato. Il rumore ha preso il controllo.",
-    "pixel_sort":       "La luce ha scelto il suo ordine. Il pixel ha obbedito.",
-    "wave_warp":        "La materia e' diventata liquida. La forma e' un'illusione.",
-    "chromatic":        "Il prisma ha spezzato la luce. I colori non tornano piu'.",
-    "datamosh":         "Il frame e' rimasto bloccato. Il tempo non scorre piu'.",
-    "scanline_burn":    "Il tubo e' bruciato. Il CRT ricorda ancora.",
-    "psychedelic":      "L'hue ha ruotato oltre il visibile. La realta' e' soggettiva.",
-    "channel_swap":     "I canali si sono scambiati. Il colore non riconosce se stesso.",
-    "image_feedback":   "Lo schermo si e' guardato allo specchio. L'infinito e' iniziato.",
-    "destruction_art":  "L'immagine e' stata tagliata. Il collage e' l'unica verita'.",
     "analogic":         "Il segnale ha perso il sincronismo. L'antenna non risponde.",
-    "displacement_map": "Il pixel si e' spostato seguendo se stesso. Lo spazio e' curvo.",
-    "op_art_circles":   "I cerchi hanno ipnotizzato la forma. L'occhio non trova pace.",
-    "halftone":         "La stampa ha dissolto l'immagine. Il punto e' tutto cio' che resta.",
-    "moire":            "Le griglie si sono scontrate. Il pattern e' nato dal conflitto.",
-    "drip":             "La gravita' ha scelto i colori. Il pixel ha obbedito alla caduta.",
-    "oil_paint":        "Il pennello ha ridisegnato la realta'. La texture ha vinto sul pixel.",
-    "posterize":        "Il colore e' stato ridotto all'essenziale. La serigrafia non perdona.",
-    "pop_art_warhol":   "Quindici minuti di celebrita', fissati in un fotogramma acido. La serigrafia non perdona.",
-    "mondrian":         "Linee nere, campi di colore puro. L'ordine e' geometria, non decorazione.",
-    "van_gogh_swirl":   "Il cielo si muove anche quando l'immagine e' ferma. Vortici, non pennellate.",
-    "rothko":           "Grandi campi di colore che respirano piano. Nessun dettaglio, solo soglia.",
-    "lichtenstein_comic": "Contorno netto, puntini a retino, un fermo immagine da fumetto pop.",
-    "klimt_mosaico":    "Oro e carne, tessera dopo tessera. La decorazione e' la struttura.",
-    "munch_onde":       "Il cielo urla in cerchi concentrici. Il colore non descrive, grida.",
-    "neon_glow":        "I bordi si sono accesi. Il buio esalta la luce.",
-    "duotone":          "Due colori soltanto. La sintesi e' la forma piu' alta.",
-    "solarize":         "La luce si e' invertita. La camera oscura ha tradito l'originale.",
-    "thermal":          "Il calore ha riscritto i colori. La temperatura e' la nuova forma.",
-    "polar":            "Lo spazio si e' avvolto su se stesso. Il centro non esiste piu'.",
-    "tunnel_zoom":      "L'immagine e' collassata verso l'interno. Il tunnel non ha fondo.",
-    "mirror_kal":       "Gli specchi si sono moltiplicati. La simmetria e' diventata religione.",
-    "crosshatch":       "Il tratteggio ha sostituito il colore. L'incisione non mente.",
-    "stippling":        "Il punto e' la minima unita' di verita'. Milioni di punti, una sola immagine.",
-    "rutt_etra":        "Lo scanner ha riscritto la riga secondo la luce. Il segnale e' diventato forma.",
-    "retro_palette":    "Sedici colori bastano per ricordare tutto. Il pixel e' tornato all'origine.",
     "ascii_art":        "L'immagine e' diventata testo. Il carattere ha sostituito il colore.",
+    "channel_swap":     "I canali si sono scambiati. Il colore non riconosce se stesso.",
+    "chromatic":        "Il prisma ha spezzato la luce. I colori non tornano piu'.",
+    "crosshatch":       "Il tratteggio ha sostituito il colore. L'incisione non mente.",
+    "datamosh":         "Il frame e' rimasto bloccato. Il tempo non scorre piu'.",
+    "destruction_art":  "L'immagine e' stata tagliata. Il collage e' l'unica verita'.",
+    "displacement_map": "Il pixel si e' spostato seguendo se stesso. Lo spazio e' curvo.",
+    "distruttivo":      "I blocchi si sono spostati. La struttura non esiste piu'.",
+    "drip":             "La gravita' ha scelto i colori. Il pixel ha obbedito alla caduta.",
+    "duotone":          "Due colori soltanto. La sintesi e' la forma piu' alta.",
+    "halftone":         "La stampa ha dissolto l'immagine. Il punto e' tutto cio' che resta.",
+    "image_feedback":   "Lo schermo si e' guardato allo specchio. L'infinito e' iniziato.",
+    "mirror_kal":       "Gli specchi si sono moltiplicati. La simmetria e' diventata religione.",
+    "moire":            "Le griglie si sono scontrate. Il pattern e' nato dal conflitto.",
+    "neon_glow":        "I bordi si sono accesi. Il buio esalta la luce.",
+    "noise":            "Il segnale e' collassato. Il rumore ha preso il controllo.",
+    "oil_paint":        "Il pennello ha ridisegnato la realta'. La texture ha vinto sul pixel.",
+    "op_art_circles":   "I cerchi hanno ipnotizzato la forma. L'occhio non trova pace.",
+    "pixel_sort":       "La luce ha scelto il suo ordine. Il pixel ha obbedito.",
+    "polar":            "Lo spazio si e' avvolto su se stesso. Il centro non esiste piu'.",
+    "pop_art_warhol":   "Quindici minuti di celebrita', fissati in un fotogramma acido. La serigrafia non perdona.",
+    "posterize":        "Il colore e' stato ridotto all'essenziale. La serigrafia non perdona.",
+    "psychedelic":      "L'hue ha ruotato oltre il visibile. La realta' e' soggettiva.",
+    "retro_palette":    "Sedici colori bastano per ricordare tutto. Il pixel e' tornato all'origine.",
+    "rutt_etra":        "Lo scanner ha riscritto la riga secondo la luce. Il segnale e' diventato forma.",
+    "scanline_burn":    "Il tubo e' bruciato. Il CRT ricorda ancora.",
+    "solarize":         "La luce si e' invertita. La camera oscura ha tradito l'originale.",
+    "stippling":        "Il punto e' la minima unita' di verita'. Milioni di punti, una sola immagine.",
     "temporal_bands":   "Ogni riga ricorda un istante diverso. Il tempo non e' piu' uno solo.",
+    "thermal":          "Il calore ha riscritto i colori. La temperatura e' la nuova forma.",
+    "tunnel_zoom":      "L'immagine e' collassata verso l'interno. Il tunnel non ha fondo.",
+    "vhs":              "Il nastro ha consumato i colori. La memoria e' distorta.",
+    "wave_warp":        "La materia e' diventata liquida. La forma e' un'illusione.",
 }
 
 EFFECT_ENGINES = {
-    "vhs":              "magnetic_tape_engine",
-    "distruttivo":      "block_fragment_engine",
-    "noise":            "entropy_noise_core",
-    "pixel_sort":       "luminance_sort_engine",
-    "wave_warp":        "sinusoidal_warp_engine",
-    "chromatic":        "radial_aberration_core",
-    "datamosh":         "frame_decay_engine",
-    "scanline_burn":    "crt_burn_engine",
-    "psychedelic":      "hue_rotation_core",
-    "channel_swap":     "channel_matrix_engine",
-    "image_feedback":   "recursive_zoom_engine",
-    "destruction_art":  "strip_collage_engine",
     "analogic":         "analog_sync_engine",
-    "displacement_map": "self_displacement_engine",
-    "op_art_circles":   "concentric_wave_engine",
-    "halftone":         "halftone_dot_engine",
-    "moire":            "grid_interference_engine",
-    "drip":             "directional_drip_sort_engine",
-    "oil_paint":        "kuwahara_paint_engine",
-    "posterize":        "color_quantize_engine",
-    "pop_art_warhol":   "silkscreen_grid_engine",
-    "mondrian":         "space_partition_engine",
-    "van_gogh_swirl":   "flow_field_engine",
-    "rothko":           "color_field_blur_engine",
-    "lichtenstein_comic": "sobel_bendays_engine",
-    "klimt_mosaico":    "voronoi_gold_engine",
-    "munch_onde":       "radial_wave_engine",
-    "neon_glow":        "edge_neon_engine",
-    "duotone":          "dual_color_engine",
-    "solarize":         "highlight_invert_engine",
-    "thermal":          "false_color_engine",
-    "polar":            "polar_coords_engine",
-    "tunnel_zoom":      "tunnel_zoom_engine",
-    "mirror_kal":       "radial_symmetry_engine",
-    "crosshatch":       "hatch_render_engine",
-    "stippling":        "pointillism_engine",
-    "rutt_etra":        "scan_luminance_engine",
-    "retro_palette":    "c64_palette_quantize_engine",
     "ascii_art":        "glyph_luminance_engine",
+    "channel_swap":     "channel_matrix_engine",
+    "chromatic":        "radial_aberration_core",
+    "crosshatch":       "hatch_render_engine",
+    "datamosh":         "frame_decay_engine",
+    "destruction_art":  "strip_collage_engine",
+    "displacement_map": "self_displacement_engine",
+    "distruttivo":      "block_fragment_engine",
+    "drip":             "directional_drip_sort_engine",
+    "duotone":          "dual_color_engine",
+    "halftone":         "halftone_dot_engine",
+    "image_feedback":   "recursive_zoom_engine",
+    "mirror_kal":       "radial_symmetry_engine",
+    "moire":            "grid_interference_engine",
+    "neon_glow":        "edge_neon_engine",
+    "noise":            "entropy_noise_core",
+    "oil_paint":        "kuwahara_paint_engine",
+    "op_art_circles":   "concentric_wave_engine",
+    "pixel_sort":       "luminance_sort_engine",
+    "polar":            "polar_coords_engine",
+    "pop_art_warhol":   "silkscreen_grid_engine",
+    "posterize":        "color_quantize_engine",
+    "psychedelic":      "hue_rotation_core",
+    "retro_palette":    "c64_palette_quantize_engine",
+    "rutt_etra":        "scan_luminance_engine",
+    "scanline_burn":    "crt_burn_engine",
+    "solarize":         "highlight_invert_engine",
+    "stippling":        "pointillism_engine",
     "temporal_bands":   "temporal_band_slicer_engine",
+    "thermal":          "false_color_engine",
+    "tunnel_zoom":      "tunnel_zoom_engine",
+    "vhs":              "magnetic_tape_engine",
+    "wave_warp":        "sinusoidal_warp_engine",
 }
 
 
