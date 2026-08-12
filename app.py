@@ -1473,6 +1473,176 @@ def glitch_lichtenstein_comic(img, contrasto=0.5, dimensione_puntini=0.5, spesso
         st.error(f"Lichtenstein Comic: {e}"); return img
 
 
+def glitch_klimt_mosaico(img, dim_tessere=0.5, doratura=0.6, irregolarita=0.4):
+    """Klimt 'fase dorata': mosaico di tessere irregolari (Voronoi su griglia
+    jittered, ricerca vettoriale sui 9 vicini di griglia -> veloce anche su
+    foto grandi) colorate col tono medio reale della zona ma spinte verso
+    una palette oro/bronzo/smeraldo; bordi scuri fra tessera e tessera;
+    luccichio metallico per-tessera per simulare la foglia oro.
+
+    dim_tessere   : 0-1, dimensione media delle tessere
+    doratura      : 0-1, quanto il colore viene spinto verso la palette oro/Klimt
+    irregolarita  : 0-1, quanto i centri delle tessere sono jitterati (organicita')
+    """
+    try:
+        rgb = np.array(img.convert("RGB"), dtype=np.float32)
+        h, w = rgb.shape[:2]
+
+        cell = max(6, round(10 + dim_tessere * 34))
+        jitter_amt = irregolarita * cell * 0.42
+
+        rows = int(np.ceil(h / cell)) + 2
+        cols = int(np.ceil(w / cell)) + 2
+        rng = np.random.default_rng(11)
+        base_gy = (np.arange(rows) - 1) * cell
+        base_gx = (np.arange(cols) - 1) * cell
+        gcy, gcx = np.meshgrid(base_gy, base_gx, indexing="ij")
+        gcy = gcy + rng.uniform(-jitter_amt, jitter_amt, size=gcy.shape)
+        gcx = gcx + rng.uniform(-jitter_amt, jitter_amt, size=gcx.shape)
+
+        yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+        row_i = np.floor(yy / cell).astype(np.int32) + 1
+        col_i = np.floor(xx / cell).astype(np.int32) + 1
+
+        best_d = np.full((h, w), 1e18, dtype=np.float32)
+        best_id = np.zeros((h, w), dtype=np.int32)
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                rr = np.clip(row_i + dr, 0, rows - 1)
+                cc = np.clip(col_i + dc, 0, cols - 1)
+                cx = gcx[rr, cc]
+                cy = gcy[rr, cc]
+                d = (xx - cx) ** 2 + (yy - cy) ** 2
+                mask = d < best_d
+                best_d = np.where(mask, d, best_d)
+                best_id = np.where(mask, rr * cols + cc, best_id)
+
+        n_ids = rows * cols
+        ids_flat = best_id.ravel()
+        counts = np.bincount(ids_flat, minlength=n_ids).astype(np.float32)
+        counts_safe = np.maximum(counts, 1)
+        mean_color = np.zeros((n_ids, 3), dtype=np.float32)
+        for c in range(3):
+            sums = np.bincount(ids_flat, weights=rgb[..., c].ravel(), minlength=n_ids)
+            mean_color[:, c] = sums / counts_safe
+
+        GOLD_PALETTE = np.array([
+            [201, 162, 39], [176, 124, 33], [222, 190, 90],
+            [120, 40, 40], [30, 90, 70], [15, 15, 18],
+        ], dtype=np.float32)
+        lum = mean_color[:, 0]*0.299 + mean_color[:, 1]*0.587 + mean_color[:, 2]*0.114
+        gold_idx = np.clip((lum/255.0 * (len(GOLD_PALETTE)-1)).astype(np.int32), 0, len(GOLD_PALETTE)-1)
+        gold = GOLD_PALETTE[gold_idx]
+        glint = rng.uniform(0.85, 1.18, size=n_ids).astype(np.float32)[:, None]
+        tess_color = (mean_color*(1-doratura) + gold*doratura) * glint
+
+        out = tess_color[best_id]
+
+        border = (np.roll(best_id, 1, axis=0) != best_id) | (np.roll(best_id, 1, axis=1) != best_id)
+        out[border] = out[border] * 0.25
+
+        out = np.clip(out, 0, 255).astype(np.uint8)
+        return Image.fromarray(out, mode="RGB")
+    except Exception as e:
+        st.error(f"Klimt Mosaico: {e}"); return img
+
+
+def glitch_munch_onde(img, ampiezza_onde=0.5, frequenza=0.5, intensita_colore=0.5):
+    """Munch 'L'Urlo': campo di flusso concentrico (onde multi-ottava attorno
+    a un centro fuori quadro) che deforma i pixel lungo linee curve tangenti;
+    remap colore verso la palette espressionista (blu/nero profondi nelle
+    ombre, arancio/rosso bruciato nelle luci); banding di luminosita'
+    visibile anche sui fondali piatti per le pennellate concentriche.
+
+    ampiezza_onde     : 0-1, intensita' della deformazione a onde concentriche
+    frequenza         : 0-1, quante onde (frequenza spaziale delle bande)
+    intensita_colore  : 0-1, quanto il colore viene spinto verso la palette Munch
+    """
+    try:
+        rgb = np.array(img.convert("RGB"), dtype=np.float32)
+        h, w = rgb.shape[:2]
+        yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+
+        ccx, ccy = w * 0.5, -h * 0.35
+        dx, dy = xx - ccx, yy - ccy
+        r = np.sqrt(dx*dx + dy*dy) + 1e-6
+        base_angle = np.arctan2(dy, dx)
+        tx, ty = -dy / r, dx / r
+
+        freq = 0.015 + frequenza * 0.05
+        amp = ampiezza_onde * (8 + frequenza * 10)
+        wave = (np.sin(r * freq) * 1.0
+                + np.sin(r * freq * 2.3 + 1.7) * 0.5
+                + np.sin(base_angle * 6.0 + r * freq * 0.5) * 0.35)
+        disp = wave * amp
+
+        src_x = np.clip(np.round(xx + tx * disp).astype(np.int32), 0, w - 1)
+        src_y = np.clip(np.round(yy + ty * disp).astype(np.int32), 0, h - 1)
+        warped = rgb[src_y, src_x]
+
+        lum = (warped[..., 0]*0.299 + warped[..., 1]*0.587 + warped[..., 2]*0.114) / 255.0
+        DEEP = np.array([15, 25, 60], dtype=np.float32)
+        MID = np.array([140, 60, 40], dtype=np.float32)
+        HOT = np.array([235, 110, 30], dtype=np.float32)
+        t = lum[..., None]
+        munch_col = np.where(t < 0.5,
+                              DEEP*(1-t*2) + MID*(t*2),
+                              MID*(1-(t-0.5)*2) + HOT*((t-0.5)*2))
+
+        mean = warped.mean(axis=-1, keepdims=True)
+        desat = mean + (warped - mean) * 0.4
+        out = desat * (1 - intensita_colore) + munch_col * intensita_colore
+
+        wave_norm = wave / 1.85
+        out = out * (1 + 0.14 * ampiezza_onde * wave_norm[..., None])
+
+        out = np.clip(out, 0, 255).astype(np.uint8)
+        return Image.fromarray(out, mode="RGB")
+    except Exception as e:
+        st.error(f"Munch Onde: {e}"); return img
+
+
+def glitch_wave_interference(img, freq=0.55, warp=0.65, chroma=0.5):
+    """Griglia sinusoidale verticale la cui fase e' deformata dalla luminanza
+    locale (le zone chiare piegano le righe, il nero resta piatto/vuoto).
+    Canali RGB separati leggermente in X -> frangia cromatica sui bordi.
+    Ricostruisce il look 'scan line portrait' / interferenza ottica a righe
+    ondulate con aberrazione cromatica.
+
+    freq   : 0-1, spaziatura delle righe (piu' alto = righe piu' fitte)
+    warp   : 0-1, quanto la luminanza deforma la fase della griglia
+    chroma : 0-1, sfasamento R/G/B (aberrazione cromatica)
+    """
+    try:
+        rgb = np.array(img.convert("RGB"), dtype=np.float32) / 255.0
+        lum = rgb[..., 0]*0.299 + rgb[..., 1]*0.587 + rgb[..., 2]*0.114
+        h, w = lum.shape
+
+        xs = np.arange(w, dtype=np.float32)
+        X = np.broadcast_to(xs, (h, w))
+
+        period = 18.0 - freq * 14.0
+        base_k = 2.0 * np.pi / period
+        phase_amp = warp * 6.0
+
+        def render_channel(shift_px):
+            Xs = X + shift_px
+            phase = lum * phase_amp
+            grating = 0.5 + 0.5 * np.sin(Xs * base_k + phase * 2.0 * np.pi)
+            return grating * (lum ** 0.8)
+
+        shift = chroma * 3.0
+        R = render_channel(-shift)
+        G = render_channel(0.0)
+        B = render_channel(shift)
+
+        out = np.clip(np.stack([R, G, B], axis=-1), 0, 1)
+        out = (out * 255).astype(np.uint8)
+        return Image.fromarray(out, mode="RGB")
+    except Exception as e:
+        st.error(f"Wave Interference: {e}"); return img
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  CATALOGO EFFETTI
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1543,6 +1713,11 @@ EFFECTS = [
         ("Iterazioni",     0.0, 1.0, 0.4, 0.05, "fb_iter"),
         ("Decay",          0.0, 1.0, 0.5, 0.05, "fb_decay"),
     ]),
+    ("klimt_mosaico", "Klimt Mosaico", "🟨", glitch_klimt_mosaico, [
+        ("Dim. Tessere",   0.0, 1.0, 0.5, 0.05, "kl_size"),
+        ("Doratura",       0.0, 1.0, 0.6, 0.05, "kl_gold"),
+        ("Irregolarità",   0.0, 1.0, 0.4, 0.05, "kl_irreg"),
+    ]),
     ("lichtenstein_comic", "Lichtenstein Comic", "💬", glitch_lichtenstein_comic, [
         ("Contrasto Colori",   0.0, 1.0, 0.5, 0.05, "li_contrast"),
         ("Dimensione Puntini", 0.0, 1.0, 0.5, 0.05, "li_dots"),
@@ -1562,6 +1737,11 @@ EFFECTS = [
         ("Complessità",     0.0, 1.0, 0.55, 0.05, "mn_complex"),
         ("Spessore Linee",  0.0, 1.0, 0.5,  0.05, "mn_lines"),
         ("Vivacità Colori", 0.0, 1.0, 0.6,  0.05, "mn_vivid"),
+    ]),
+    ("munch_onde", "Munch Onde", "🌊😱", glitch_munch_onde, [
+        ("Ampiezza Onde",     0.0, 1.0, 0.5,  0.05, "mu_amp"),
+        ("Frequenza",         0.0, 1.0, 0.5,  0.05, "mu_freq"),
+        ("Intensità Colore",  0.0, 1.0, 0.55, 0.05, "mu_col"),
     ]),
     ("neon_glow", "Neon Glow", "💡", glitch_neon_glow, [
         ("Soglia bordi",   0.0, 1.0, 0.3, 0.05, "ng_thresh"),
@@ -1663,6 +1843,11 @@ EFFECTS = [
         ("Scanlines",      0.0, 2.0, 1.0, 0.1,  "vhs_scan"),
         ("Color Split",    0.0, 2.0, 1.0, 0.1,  "vhs_col"),
     ]),
+    ("wave_interference", "Wave Interference", "📶", glitch_wave_interference, [
+        ("Frequenza",         0.0, 1.0, 0.55, 0.05, "wi_freq"),
+        ("Deformazione",      0.0, 1.0, 0.65, 0.05, "wi_warp"),
+        ("Aberr. Cromatica",  0.0, 1.0, 0.5,  0.05, "wi_chroma"),
+    ]),
     ("wave_warp", "Wave Warp", "〰️", glitch_wave_warp, [
         ("Ampiezza",       0.0, 2.0, 1.0, 0.1,  "ww_amp"),
         ("Frequenza",      0.0, 2.0, 1.0, 0.1,  "ww_freq"),
@@ -1689,10 +1874,12 @@ EFFECT_QUOTES = {
     "duotone":          "Due colori soltanto. La sintesi e' la forma piu' alta.",
     "halftone":         "La stampa ha dissolto l'immagine. Il punto e' tutto cio' che resta.",
     "image_feedback":   "Lo schermo si e' guardato allo specchio. L'infinito e' iniziato.",
+    "klimt_mosaico":    "L'oro non decora la superficie, la sostituisce. Ogni tessera e' un frammento di eternita'.",
     "lichtenstein_comic": "Il punto e' l'unita' minima dell'emozione stampata. Whaam.",
     "mirror_kal":       "Gli specchi si sono moltiplicati. La simmetria e' diventata religione.",
     "moire":            "Le griglie si sono scontrate. Il pattern e' nato dal conflitto.",
     "mondrian":         "Linee nere, campi di colore puro. L'ordine e' geometria, non decorazione.",
+    "munch_onde":       "Il cielo urla in cerchi concentrici. Il colore non descrive, grida.",
     "neon_glow":        "I bordi si sono accesi. Il buio esalta la luce.",
     "noise":            "Il segnale e' collassato. Il rumore ha preso il controllo.",
     "oil_paint":        "Il pennello ha ridisegnato la realta'. La texture ha vinto sul pixel.",
@@ -1713,6 +1900,7 @@ EFFECT_QUOTES = {
     "tunnel_zoom":      "L'immagine e' collassata verso l'interno. Il tunnel non ha fondo.",
     "van_gogh_swirl":   "Il cielo si muove anche quando l'immagine e' ferma. Vortici, non pennellate.",
     "vhs":              "Il nastro ha consumato i colori. La memoria e' distorta.",
+    "wave_interference": "La griglia ha imparato la luce. Ogni riga porta la memoria del volto.",
     "wave_warp":        "La materia e' diventata liquida. La forma e' un'illusione.",
 }
 
@@ -1730,10 +1918,12 @@ EFFECT_ENGINES = {
     "duotone":          "dual_color_engine",
     "halftone":         "halftone_dot_engine",
     "image_feedback":   "recursive_zoom_engine",
+    "klimt_mosaico":    "voronoi_tessera_gold_engine",
     "lichtenstein_comic": "bendday_dotscreen_edge_engine",
     "mirror_kal":       "radial_symmetry_engine",
     "moire":            "grid_interference_engine",
     "mondrian":         "recursive_bsp_destijl_engine",
+    "munch_onde":       "concentric_flowfield_engine",
     "neon_glow":        "edge_neon_engine",
     "noise":            "entropy_noise_core",
     "oil_paint":        "kuwahara_paint_engine",
@@ -1754,6 +1944,7 @@ EFFECT_ENGINES = {
     "tunnel_zoom":      "tunnel_zoom_engine",
     "van_gogh_swirl":   "structure_tensor_vortex_engine",
     "vhs":              "magnetic_tape_engine",
+    "wave_interference": "phase_grating_interference_engine",
     "wave_warp":        "sinusoidal_warp_engine",
 }
 
