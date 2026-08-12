@@ -6,6 +6,7 @@ import zipfile
 import random
 import colorsys
 from datetime import datetime
+from scipy.ndimage import uniform_filter
 
 st.set_page_config(page_title="GlitchLabLoop507", layout="wide")
 st.title("🔥 GlitchLabLoop507")
@@ -641,52 +642,68 @@ def glitch_drip(img, soglia=0.4, separazione_rgb=0.5, asse=0.0):
 
 
 def glitch_oil_paint(img, raggio=0.4, livelli=0.5, blend=0.7):
-    """Pennellate Kuwahara vettoriale: ogni pixel prende il colore del quadrante più omogeneo."""
+    """Pennellate Kuwahara vettoriale: ogni pixel prende il colore del quadrante più omogeneo.
+    Le finestre scorrevoli (sliding_window_view) sono pesanti su foto reali ad
+    alta risoluzione: l'elaborazione avviene su una copia ridotta e il
+    risultato viene poi riportato alla dimensione originale (da 30s+ a
+    pochi secondi su una foto da alcuni megapixel, senza perdita percepibile
+    dato che l'effetto pittorico e' comunque a bassa frequenza)."""
     try:
-        img = img.convert("RGB")
+        orig_w, orig_h = img.size
+        img_work, _ = _downscale_for_work(img.convert("RGB"), max_dim=1200)
+        img = img_work.convert("RGB")
         arr = np.array(img, dtype=np.float32)
         h, w, _ = arr.shape
         r = max(2, int(2 + 8 * raggio))
 
-        # Kuwahara vettoriale: usa integral images per calcolare mean e var di ogni quadrante in O(h*w)
+        # Kuwahara vettoriale via summed-area table (SAT): mean/var di ogni
+        # quadrante calcolati con 4 sottrazioni per pixel, O(h*w) totale.
+        # Molto piu' veloce di sliding_window_view + var/mean (che iterano
+        # su memoria non contigua ed erano il vero collo di bottiglia).
         pad = r
         padded = np.pad(arr, ((pad, pad), (pad, pad), (0, 0)), mode='edge')
-        # Luminosità per calcolo varianza
-        lum_pad = (padded[:,:,0]*0.299 + padded[:,:,1]*0.587 + padded[:,:,2]*0.114)
+        lum_pad = (padded[:, :, 0]*0.299 + padded[:, :, 1]*0.587 + padded[:, :, 2]*0.114)
 
-        best_var = np.full((h, w), np.inf)
+        def sat(a):
+            c = np.cumsum(np.cumsum(a, axis=0), axis=1)
+            pad_shape = [(1, 0), (1, 0)] + [(0, 0)] * (a.ndim - 2)
+            return np.pad(c, pad_shape, mode="constant")
+
+        I_lum = sat(lum_pad)
+        I_lum_sq = sat(lum_pad * lum_pad)
+        I_col = sat(padded)   # (Hpad+1, Wpad+1, 3)
+
+        def box_sum(I, soy, sox):
+            t1 = I[soy + r:soy + r + h, sox + r:sox + r + w]
+            t2 = I[soy:soy + h, sox + r:sox + r + w]
+            t3 = I[soy + r:soy + r + h, sox:sox + w]
+            t4 = I[soy:soy + h, sox:sox + w]
+            return t1 - t2 - t3 + t4
+
+        best_var = np.full((h, w), np.inf, dtype=np.float32)
         out = np.zeros_like(arr)
+        area = float(r * r)
 
-        # 4 quadranti: (top-left, top-right, bottom-left, bottom-right) del pixel corrente
-        for (dy0, dy1, dx0, dx1) in [
-            (0,   r, 0,   r),   # top-left
-            (0,   r, r,  2*r),  # top-right
-            (r,  2*r, 0,  r),   # bottom-left
-            (r,  2*r, r, 2*r),  # bottom-right
-        ]:
-            # Estrae la finestra [dy0:dy1, dx0:dx1] intorno a ogni pixel (tramite slicing)
-            ph, pw = dy1 - dy0, dx1 - dx0
-            # Regione del padded array che corrisponde al quadrante per ogni (y,x) originale
-            win_lum   = np.lib.stride_tricks.sliding_window_view(lum_pad, (ph, pw))
-            win_color = np.lib.stride_tricks.sliding_window_view(padded,  (ph, pw, 3))
-
-            # sliding_window_view su 3D restituisce (H, W, 1, ph, pw, 3) — prendiamo [..,0,..,:]
-            win_lum   = win_lum  [dy0:dy0+h, dx0:dx0+w]            # (h, w, ph, pw)
-            win_color = win_color[dy0:dy0+h, dx0:dx0+w, 0]         # (h, w, ph, pw, 3)
-
-            var  = win_lum.var(axis=(-2, -1))                       # (h, w)
-            mean = win_color.mean(axis=(-3, -2))                    # (h, w, 3)
+        for (soy, sox) in [(0, 0), (0, r), (r, 0), (r, r)]:   # TL, TR, BL, BR
+            s_lum = box_sum(I_lum, soy, sox)
+            s_lum_sq = box_sum(I_lum_sq, soy, sox)
+            mean_lum = s_lum / area
+            var = s_lum_sq / area - mean_lum * mean_lum
+            mean_col = box_sum(I_col, soy, sox) / area   # (h, w, 3)
 
             mask = var < best_var
             best_var[mask] = var[mask]
-            out[mask] = mean[mask]
+            out[mask] = mean_col[mask]
 
         # Posterizzazione finale per accentuare l'effetto pittorico
         lev = max(2, int(2 + 6 * livelli))
         step = 256.0 / lev
         out_post = (np.floor(out / step) * step).clip(0, 255)
         result = arr * (1 - blend) + out_post * blend
-        return Image.fromarray(result.astype(np.uint8))
+        result_img = Image.fromarray(result.astype(np.uint8))
+        if result_img.size != (orig_w, orig_h):
+            result_img = result_img.resize((orig_w, orig_h), Image.LANCZOS)
+        return result_img
     except Exception as e:
         st.error(f"Oil Paint: {e}"); return img
 
@@ -1181,16 +1198,30 @@ def glitch_temporal_bands(img, intensity=0.7, ampiezza_bande=0.5, spostamento=0.
 
 
 def _box_blur(a, r):
-    """Box blur separabile via cumsum, usato da Rothko e Van Gogh (no scipy)."""
+    """Box blur veloce via scipy.ndimage.uniform_filter (C-ottimizzato, molto
+    piu' rapido della versione cumsum fatta in casa su immagini grandi)."""
     if r < 1:
         return a
-    pad = [(r, r), (r, r)] + [(0, 0)] * (a.ndim - 2)
-    ap = np.pad(a, pad, mode="reflect")
-    c = np.cumsum(np.cumsum(ap, axis=0), axis=1)
-    c = np.pad(c, [(1, 0), (1, 0)] + [(0, 0)] * (a.ndim - 2), mode="constant")
-    h, w = a.shape[0], a.shape[1]
-    s = 2 * r + 1
-    return (c[s:s+h, s:s+w] - c[0:h, s:s+w] - c[s:s+h, 0:w] + c[0:h, 0:w]) / (s * s)
+    size = 2 * r + 1
+    if a.ndim == 2:
+        return uniform_filter(a, size=size, mode="reflect")
+    axes_size = [size, size] + [1] * (a.ndim - 2)
+    return uniform_filter(a, size=axes_size, mode="reflect")
+
+
+def _downscale_for_work(img, max_dim):
+    """Riduce l'immagine per l'elaborazione pesante se supera max_dim sul lato
+    lungo; ritorna (immagine_ridotta, scala) dove scala = dim_originale/dim_ridotta.
+    La riduzione agisce anche da filtro passa-basso: elimina il rumore ad alta
+    frequenza che altrimenti guiderebbe tagli/decisioni casuali sull'immagine."""
+    w, h = img.size
+    long_side = max(w, h)
+    if long_side <= max_dim:
+        return img, 1.0
+    scale = long_side / max_dim
+    new_w, new_h = max(1, round(w / scale)), max(1, round(h / scale))
+    small = img.resize((new_w, new_h), Image.LANCZOS)
+    return small, scale
 
 
 def _sobel(gray):
@@ -1203,19 +1234,31 @@ def _sobel(gray):
 
 def glitch_mondrian(img, complessita=0.55, spessore=0.5, vivacita=0.6):
     """Mondrian / De Stijl: partizione ricorsiva content-aware (taglia dove la
-    varianza locale e' massima, non griglia fissa). Ogni cella viene letta in
-    HSV: se e' chiara/desaturata resta bianca, altrimenti forzata al primario
-    De Stijl piu' vicino per tonalita' (rosso/giallo/blu) o nero se molto scura.
-    Linee nere spesse ai bordi di partizione.
+    variazione locale e' massima). La ricerca dei tagli avviene su una copia
+    ridotta e sfocata dell'immagine (elimina il rumore/texture ad alta
+    frequenza che altrimenti genererebbe tagli casuali non legati alla foto
+    reale), poi le coordinate vengono riscalate sull'immagine a piena
+    risoluzione per il rendering finale (colore medio reale, linee nitide).
+    Ogni cella viene letta in HSV: se e' chiara/desaturata resta bianca,
+    altrimenti forzata al primario De Stijl piu' vicino per tonalita'
+    (rosso/giallo/blu) o nero se molto scura.
 
     complessita : 0-1, profondita' massima di ricorsione (piu' celle)
     spessore    : 0-1, spessore delle linee nere
     vivacita    : 0-1, quanto facilmente una cella diventa colorata anziche' bianca
     """
     try:
-        rgb = np.array(img.convert("RGB"), dtype=np.float32)
-        h, w = rgb.shape[:2]
-        lum = rgb[..., 0]*0.299 + rgb[..., 1]*0.587 + rgb[..., 2]*0.114
+        rgb_full = np.array(img.convert("RGB"), dtype=np.float32)
+        h, w = rgb_full.shape[:2]
+
+        # analisi su versione ridotta + sfocata: elimina il rumore fotografico
+        # che altrimenti farebbe scegliere tagli a caso pixel-per-pixel
+        analysis_img, scale = _downscale_for_work(img.convert("RGB"), max_dim=500)
+        rgb_a = np.array(analysis_img, dtype=np.float32)
+        ah, aw = rgb_a.shape[:2]
+        lum_a = rgb_a[..., 0]*0.299 + rgb_a[..., 1]*0.587 + rgb_a[..., 2]*0.114
+        blur_r = max(1, round(min(ah, aw) * 0.015))
+        lum_a = _box_blur(lum_a, blur_r)
 
         max_depth = 2 + round(complessita * 5)
         line_px = max(1, int(round(1 + spessore * (min(w, h) * 0.02))))
@@ -1230,30 +1273,51 @@ def glitch_mondrian(img, complessita=0.55, spessore=0.5, vivacita=0.6):
         white_s_thr = 0.42 - 0.30 * vivacita
         white_v_thr = 0.93 - 0.08 * vivacita
 
-        out = np.full((h, w, 3), 250, dtype=np.float32)
-        cuts = []
+        cuts_a = []   # tagli in coordinate dell'immagine di analisi (ridotta)
+        leaves_a = []  # rettangoli foglia in coordinate di analisi
 
         def best_split(x0, y0, x1, y1):
-            sub = lum[y0:y1, x0:x1]
+            sub = lum_a[y0:y1, x0:x1]
             sh, sw = sub.shape
-            if sw > 12:
+            if sw > 10:
                 col_mean = sub.mean(axis=0)
                 grad = np.abs(np.diff(col_mean))
                 cx, cx_strength = int(np.argmax(grad)) + 1, grad.max()
             else:
                 cx, cx_strength = sw // 2, -1
-            if sh > 12:
+            if sh > 10:
                 row_mean = sub.mean(axis=1)
                 gradr = np.abs(np.diff(row_mean))
                 cy, cy_strength = int(np.argmax(gradr)) + 1, gradr.max()
             else:
                 cy, cy_strength = sh // 2, -1
             if cx_strength >= cy_strength:
-                return "v", x0 + max(6, min(sw - 6, cx))
-            return "h", y0 + max(6, min(sh - 6, cy))
+                return "v", x0 + max(5, min(sw - 5, cx))
+            return "h", y0 + max(5, min(sh - 5, cy))
+
+        def recurse(x0, y0, x1, y1, depth):
+            w_, h_ = x1 - x0, y1 - y0
+            min_size = min(aw, ah) * 0.11
+            if depth >= max_depth or w_ < min_size or h_ < min_size:
+                leaves_a.append((x0, y0, x1, y1))
+                return
+            axis, pos = best_split(x0, y0, x1, y1)
+            if axis == "v":
+                cuts_a.append((pos, y0, pos, y1))
+                recurse(x0, y0, pos, y1, depth + 1)
+                recurse(pos, y0, x1, y1, depth + 1)
+            else:
+                cuts_a.append((x0, pos, x1, pos))
+                recurse(x0, y0, x1, pos, depth + 1)
+                recurse(x0, pos, x1, y1, depth + 1)
+
+        recurse(0, 0, aw, ah, 0)
+
+        # riscalo tagli e foglie sulla risoluzione piena
+        sx, sy = w / aw, h / ah
 
         def cell_color(x0, y0, x1, y1):
-            r, g, b = (rgb[y0:y1, x0:x1].reshape(-1, 3).mean(axis=0) / 255.0)
+            r, g, b = (rgb_full[y0:y1, x0:x1].reshape(-1, 3).mean(axis=0) / 255.0)
             hh, ss, vv = colorsys.rgb_to_hsv(r, g, b)
             if vv < 0.22:
                 return BLACK
@@ -1262,32 +1326,25 @@ def glitch_mondrian(img, complessita=0.55, spessore=0.5, vivacita=0.6):
             dists = [min(abs(hh - hu), 1 - abs(hh - hu)) for hu, _ in HUES]
             return HUES[int(np.argmin(dists))][1]
 
-        def recurse(x0, y0, x1, y1, depth):
-            w_, h_ = x1 - x0, y1 - y0
-            min_size = min(w, h) * 0.11
-            if depth >= max_depth or w_ < min_size or h_ < min_size:
-                out[y0:y1, x0:x1] = cell_color(x0, y0, x1, y1)
-                return
-            axis, pos = best_split(x0, y0, x1, y1)
-            if axis == "v":
-                cuts.append((pos, y0, pos, y1))
-                recurse(x0, y0, pos, y1, depth + 1)
-                recurse(pos, y0, x1, y1, depth + 1)
-            else:
-                cuts.append((x0, pos, x1, pos))
-                recurse(x0, y0, x1, pos, depth + 1)
-                recurse(x0, pos, x1, y1, depth + 1)
-
-        recurse(0, 0, w, h, 0)
+        out = np.full((h, w, 3), 250, dtype=np.float32)
+        for (x0, y0, x1, y1) in leaves_a:
+            X0, Y0 = int(round(x0*sx)), int(round(y0*sy))
+            X1, Y1 = int(round(x1*sx)), int(round(y1*sy))
+            X1, Y1 = max(X1, X0+1), max(Y1, Y0+1)
+            out[Y0:Y1, X0:X1] = cell_color(X0, Y0, X1, Y1)
 
         result = out.astype(np.uint8).copy()
-        for (x0, y0, x1, y1) in cuts:
+        for (x0, y0, x1, y1) in cuts_a:
             if x0 == x1:
-                xs = slice(max(0, x0 - line_px // 2), min(w, x0 + line_px - line_px // 2))
-                result[y0:y1, xs] = 15
+                X = int(round(x0*sx))
+                Y0, Y1 = int(round(y0*sy)), int(round(y1*sy))
+                xs = slice(max(0, X - line_px // 2), min(w, X + line_px - line_px // 2))
+                result[Y0:Y1, xs] = 15
             else:
-                ys = slice(max(0, y0 - line_px // 2), min(h, y0 + line_px - line_px // 2))
-                result[ys, x0:x1] = 15
+                Y = int(round(y0*sy))
+                X0, X1 = int(round(x0*sx)), int(round(x1*sx))
+                ys = slice(max(0, Y - line_px // 2), min(h, Y + line_px - line_px // 2))
+                result[ys, X0:X1] = 15
         result[0:line_px, :] = 15
         result[-line_px:, :] = 15
         result[:, 0:line_px] = 15
@@ -1303,14 +1360,21 @@ def glitch_van_gogh(img, turbolenza=0.6, pennellata=0.5, saturazione=0.5):
     per trovare l'orientamento locale dei contorni -> pennellate direzionali
     (smear lungo la tangente, non a caso). Vortice gaussiano centrato sul
     punto piu' luminoso dell'immagine, rotazione che decade con la distanza.
-    Quantizzazione + boost colore finale per l'effetto materico.
+    Quantizzazione + boost colore finale per l'effetto materico. Come Rothko,
+    l'elaborazione (la piu' pesante del pacchetto, per via delle pennellate
+    campionate piu' volte) avviene su una copia ridotta e viene poi
+    riportata alla risoluzione originale: su una foto vera passa da
+    30-40 secondi a pochi secondi, e l'effetto pittorico non perde nulla
+    (anzi la leggera morbidezza dell'upscale aiuta l'aspetto materico).
 
     turbolenza  : 0-1, forza del vortice attorno al punto piu' luminoso
     pennellata  : 0-1, lunghezza dello smear direzionale (pennellata)
     saturazione : 0-1, boost colore + posterizzazione materica
     """
     try:
-        rgb = np.array(img.convert("RGB"), dtype=np.float32)
+        orig_w, orig_h = img.size
+        work_img, _ = _downscale_for_work(img.convert("RGB"), max_dim=1100)
+        rgb = np.array(work_img, dtype=np.float32)
         h, w = rgb.shape[:2]
         gray = (rgb[..., 0]*0.299 + rgb[..., 1]*0.587 + rgb[..., 2]*0.114) / 255.0
 
@@ -1352,7 +1416,10 @@ def glitch_van_gogh(img, turbolenza=0.6, pennellata=0.5, saturazione=0.5):
         painted = np.round(painted / levels) * levels
 
         out = np.clip(painted, 0, 255).astype(np.uint8)
-        return Image.fromarray(out, mode="RGB")
+        result = Image.fromarray(out, mode="RGB")
+        if result.size != (orig_w, orig_h):
+            result = result.resize((orig_w, orig_h), Image.LANCZOS)
+        return result
     except Exception as e:
         st.error(f"Van Gogh Swirl: {e}"); return img
 
@@ -1361,14 +1428,21 @@ def glitch_rothko(img, bande=0.4, sfumatura=0.5, grana=0.4):
     """Color field alla Rothko: individua i confini di banda orizzontale nei
     punti di massima variazione di luminanza (non griglia fissa), riempie
     ogni banda col colore medio reale, feathering gaussiano ai bordi
-    (bleed morbido tipico), grana di tela sovrapposta.
+    (bleed morbido tipico), grana di tela sovrapposta. L'elaborazione
+    pesante (blur, feathering, grana) avviene su una copia ridotta
+    dell'immagine e viene poi riportata alla risoluzione originale: sulle
+    foto vere (alcuni megapixel) questo taglia i tempi da decine di secondi
+    a meno di un secondo, senza perdita percepibile (le bande Rothko sono
+    comunque campi di colore piatto, non serve dettaglio pixel-per-pixel).
 
     bande     : 0-1, numero di bande di colore (2-5)
     sfumatura : 0-1, quanto le bande sfumano l'una nell'altra
     grana     : 0-1, intensita' della grana di tela
     """
     try:
-        rgb = np.array(img.convert("RGB"), dtype=np.float32)
+        orig_w, orig_h = img.size
+        work_img, _ = _downscale_for_work(img.convert("RGB"), max_dim=1000)
+        rgb = np.array(work_img, dtype=np.float32)
         h, w = rgb.shape[:2]
         lum = rgb[..., 0]*0.299 + rgb[..., 1]*0.587 + rgb[..., 2]*0.114
         row_mean = lum.mean(axis=1)
@@ -1411,7 +1485,10 @@ def glitch_rothko(img, bande=0.4, sfumatura=0.5, grana=0.4):
         out = out * (1 + noise[..., None] * grana * 0.10)
 
         out = np.clip(out, 0, 255).astype(np.uint8)
-        return Image.fromarray(out, mode="RGB")
+        result = Image.fromarray(out, mode="RGB")
+        if result.size != (orig_w, orig_h):
+            result = result.resize((orig_w, orig_h), Image.LANCZOS)
+        return result
     except Exception as e:
         st.error(f"Rothko: {e}"); return img
 
@@ -1428,7 +1505,9 @@ def glitch_lichtenstein_comic(img, contrasto=0.5, dimensione_puntini=0.5, spesso
     spessore_contorno    : 0-1, spessore del contorno nero (dilatazione bordi)
     """
     try:
-        rgb = np.array(img.convert("RGB"), dtype=np.float32)
+        orig_w, orig_h = img.size
+        work_img, _ = _downscale_for_work(img.convert("RGB"), max_dim=1400)
+        rgb = np.array(work_img, dtype=np.float32)
         h, w = rgb.shape[:2]
         gray = (rgb[..., 0]*0.299 + rgb[..., 1]*0.587 + rgb[..., 2]*0.114) / 255.0
 
@@ -1467,7 +1546,10 @@ def glitch_lichtenstein_comic(img, contrasto=0.5, dimensione_puntini=0.5, spesso
         out[edge_mask] = [10, 10, 12]
 
         out = np.clip(out, 0, 255).astype(np.uint8)
-        return Image.fromarray(out, mode="RGB")
+        result = Image.fromarray(out, mode="RGB")
+        if result.size != (orig_w, orig_h):
+            result = result.resize((orig_w, orig_h), Image.LANCZOS)
+        return result
     except Exception as e:
         st.error(f"Lichtenstein Comic: {e}"); return img
 
@@ -1484,7 +1566,9 @@ def glitch_klimt_mosaico(img, dim_tessere=0.5, doratura=0.6, irregolarita=0.4):
     irregolarita  : 0-1, quanto i centri delle tessere sono jitterati (organicita')
     """
     try:
-        rgb = np.array(img.convert("RGB"), dtype=np.float32)
+        orig_w, orig_h = img.size
+        work_img, _ = _downscale_for_work(img.convert("RGB"), max_dim=1400)
+        rgb = np.array(work_img, dtype=np.float32)
         h, w = rgb.shape[:2]
 
         cell = max(6, round(10 + dim_tessere * 34))
@@ -1541,7 +1625,10 @@ def glitch_klimt_mosaico(img, dim_tessere=0.5, doratura=0.6, irregolarita=0.4):
         out[border] = out[border] * 0.25
 
         out = np.clip(out, 0, 255).astype(np.uint8)
-        return Image.fromarray(out, mode="RGB")
+        result = Image.fromarray(out, mode="RGB")
+        if result.size != (orig_w, orig_h):
+            result = result.resize((orig_w, orig_h), Image.LANCZOS)
+        return result
     except Exception as e:
         st.error(f"Klimt Mosaico: {e}"); return img
 
@@ -1558,7 +1645,9 @@ def glitch_munch_onde(img, ampiezza_onde=0.5, frequenza=0.5, intensita_colore=0.
     intensita_colore  : 0-1, quanto il colore viene spinto verso la palette Munch
     """
     try:
-        rgb = np.array(img.convert("RGB"), dtype=np.float32)
+        orig_w, orig_h = img.size
+        work_img, _ = _downscale_for_work(img.convert("RGB"), max_dim=1400)
+        rgb = np.array(work_img, dtype=np.float32)
         h, w = rgb.shape[:2]
         yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
 
@@ -1596,7 +1685,10 @@ def glitch_munch_onde(img, ampiezza_onde=0.5, frequenza=0.5, intensita_colore=0.
         out = out * (1 + 0.14 * ampiezza_onde * wave_norm[..., None])
 
         out = np.clip(out, 0, 255).astype(np.uint8)
-        return Image.fromarray(out, mode="RGB")
+        result = Image.fromarray(out, mode="RGB")
+        if result.size != (orig_w, orig_h):
+            result = result.resize((orig_w, orig_h), Image.LANCZOS)
+        return result
     except Exception as e:
         st.error(f"Munch Onde: {e}"); return img
 
