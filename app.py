@@ -1350,7 +1350,9 @@ def glitch_mondrian(img, complessita=0.55, spessore=0.5, vivacita=0.6):
         for (x0, y0, x1, y1) in leaves_a:
             X0, Y0 = int(round(x0*sx)), int(round(y0*sy))
             X1, Y1 = int(round(x1*sx)), int(round(y1*sy))
-            X1, Y1 = max(X1, X0+1), max(Y1, Y0+1)
+            X0, Y0 = min(X0, w - 1), min(Y0, h - 1)      # mai oltre l'ultimo pixel valido
+            X1, Y1 = max(X1, X0 + 1), max(Y1, Y0 + 1)    # cella sempre non-vuota
+            X1, Y1 = min(X1, w), min(Y1, h)               # mai oltre il bordo immagine
             out[Y0:Y1, X0:X1] = cell_color(X0, Y0, X1, Y1)
 
         result = out.astype(np.uint8).copy()
@@ -2208,12 +2210,21 @@ if uploaded_file is not None:
                     vals.append(v)
 
                 prev_vals = st.session_state.get(f"params_{key}")
-                params_changed = (prev_vals != vals)
+                if prev_vals is None:
+                    # Prima volta che vediamo questo effetto in questa sessione:
+                    # memorizziamo i valori di default SENZA generare (per non
+                    # elaborare tutti i 41 effetti insieme al caricamento della
+                    # foto). Da qui in poi, qualunque modifica reale a uno
+                    # slider verra' rilevata correttamente al prossimo rerun.
+                    st.session_state[f"params_{key}"] = vals
+                    params_changed = False
+                else:
+                    params_changed = (prev_vals != vals)
                 is_live_target = live_mode and (key == live_effect_key)
                 needs_process = (
                     should_process
                     or (is_live_target and (params_changed or st.session_state.get(f"img_{key}") is None))
-                    or (not live_mode and params_changed and st.session_state.get(f"img_{key}") is not None)
+                    or (not live_mode and params_changed)
                     or (transparency_toggled and st.session_state.get(f"img_{key}") is not None)
                 )
 
