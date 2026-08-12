@@ -820,7 +820,6 @@ def glitch_polar(img, forza=0.6, rotazione=0.0, zoom=0.5):
         img = img.convert("RGB")
         arr = np.array(img, dtype=np.uint8)
         h, w, _ = arr.shape
-        cy, cx = h / 2, w / 2
         ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
         nx = (xs / w - 0.5) * 2
         ny = (ys / h - 0.5) * 2
