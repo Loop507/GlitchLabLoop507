@@ -4,6 +4,7 @@ import numpy as np
 import io
 import zipfile
 import random
+import colorsys
 from datetime import datetime
 
 st.set_page_config(page_title="GlitchLabLoop507", layout="wide")
@@ -1180,6 +1181,298 @@ def glitch_temporal_bands(img, intensity=0.7, ampiezza_bande=0.5, spostamento=0.
         st.error(f"Temporal Band Slicer: {e}"); return img
 
 
+def _box_blur(a, r):
+    """Box blur separabile via cumsum, usato da Rothko e Van Gogh (no scipy)."""
+    if r < 1:
+        return a
+    pad = [(r, r), (r, r)] + [(0, 0)] * (a.ndim - 2)
+    ap = np.pad(a, pad, mode="reflect")
+    c = np.cumsum(np.cumsum(ap, axis=0), axis=1)
+    c = np.pad(c, [(1, 0), (1, 0)] + [(0, 0)] * (a.ndim - 2), mode="constant")
+    h, w = a.shape[0], a.shape[1]
+    s = 2 * r + 1
+    return (c[s:s+h, s:s+w] - c[0:h, s:s+w] - c[s:s+h, 0:w] + c[0:h, 0:w]) / (s * s)
+
+
+def _sobel(gray):
+    """Gradienti Sobel Gx, Gy vettorizzati via padding (no scipy)."""
+    gp = np.pad(gray, 1, mode="reflect")
+    gx = (gp[0:-2, 2:] + 2*gp[1:-1, 2:] + gp[2:, 2:]) - (gp[0:-2, 0:-2] + 2*gp[1:-1, 0:-2] + gp[2:, 0:-2])
+    gy = (gp[2:, 0:-2] + 2*gp[2:, 1:-1] + gp[2:, 2:]) - (gp[0:-2, 0:-2] + 2*gp[0:-2, 1:-1] + gp[0:-2, 2:])
+    return gx, gy
+
+
+def glitch_mondrian(img, complessita=0.55, spessore=0.5, vivacita=0.6):
+    """Mondrian / De Stijl: partizione ricorsiva content-aware (taglia dove la
+    varianza locale e' massima, non griglia fissa). Ogni cella viene letta in
+    HSV: se e' chiara/desaturata resta bianca, altrimenti forzata al primario
+    De Stijl piu' vicino per tonalita' (rosso/giallo/blu) o nero se molto scura.
+    Linee nere spesse ai bordi di partizione.
+
+    complessita : 0-1, profondita' massima di ricorsione (piu' celle)
+    spessore    : 0-1, spessore delle linee nere
+    vivacita    : 0-1, quanto facilmente una cella diventa colorata anziche' bianca
+    """
+    try:
+        rgb = np.array(img.convert("RGB"), dtype=np.float32)
+        h, w = rgb.shape[:2]
+        lum = rgb[..., 0]*0.299 + rgb[..., 1]*0.587 + rgb[..., 2]*0.114
+
+        max_depth = 2 + round(complessita * 5)
+        line_px = max(1, int(round(1 + spessore * (min(w, h) * 0.02))))
+
+        WHITE = np.array([246, 244, 238])
+        RED = np.array([196, 30, 30])
+        YELLOW = np.array([232, 190, 20])
+        BLUE = np.array([25, 55, 150])
+        BLACK = np.array([18, 18, 18])
+        HUES = [(0.0, RED), (0.14, YELLOW), (0.62, BLUE)]
+
+        white_s_thr = 0.42 - 0.30 * vivacita
+        white_v_thr = 0.93 - 0.08 * vivacita
+
+        out = np.full((h, w, 3), 250, dtype=np.float32)
+        cuts = []
+
+        def best_split(x0, y0, x1, y1):
+            sub = lum[y0:y1, x0:x1]
+            sh, sw = sub.shape
+            if sw > 12:
+                col_mean = sub.mean(axis=0)
+                grad = np.abs(np.diff(col_mean))
+                cx, cx_strength = int(np.argmax(grad)) + 1, grad.max()
+            else:
+                cx, cx_strength = sw // 2, -1
+            if sh > 12:
+                row_mean = sub.mean(axis=1)
+                gradr = np.abs(np.diff(row_mean))
+                cy, cy_strength = int(np.argmax(gradr)) + 1, gradr.max()
+            else:
+                cy, cy_strength = sh // 2, -1
+            if cx_strength >= cy_strength:
+                return "v", x0 + max(6, min(sw - 6, cx))
+            return "h", y0 + max(6, min(sh - 6, cy))
+
+        def cell_color(x0, y0, x1, y1):
+            r, g, b = (rgb[y0:y1, x0:x1].reshape(-1, 3).mean(axis=0) / 255.0)
+            hh, ss, vv = colorsys.rgb_to_hsv(r, g, b)
+            if vv < 0.22:
+                return BLACK
+            if ss < white_s_thr or vv > white_v_thr:
+                return WHITE
+            dists = [min(abs(hh - hu), 1 - abs(hh - hu)) for hu, _ in HUES]
+            return HUES[int(np.argmin(dists))][1]
+
+        def recurse(x0, y0, x1, y1, depth):
+            w_, h_ = x1 - x0, y1 - y0
+            min_size = min(w, h) * 0.11
+            if depth >= max_depth or w_ < min_size or h_ < min_size:
+                out[y0:y1, x0:x1] = cell_color(x0, y0, x1, y1)
+                return
+            axis, pos = best_split(x0, y0, x1, y1)
+            if axis == "v":
+                cuts.append((pos, y0, pos, y1))
+                recurse(x0, y0, pos, y1, depth + 1)
+                recurse(pos, y0, x1, y1, depth + 1)
+            else:
+                cuts.append((x0, pos, x1, pos))
+                recurse(x0, y0, x1, pos, depth + 1)
+                recurse(x0, pos, x1, y1, depth + 1)
+
+        recurse(0, 0, w, h, 0)
+
+        result = out.astype(np.uint8).copy()
+        for (x0, y0, x1, y1) in cuts:
+            if x0 == x1:
+                xs = slice(max(0, x0 - line_px // 2), min(w, x0 + line_px - line_px // 2))
+                result[y0:y1, xs] = 15
+            else:
+                ys = slice(max(0, y0 - line_px // 2), min(h, y0 + line_px - line_px // 2))
+                result[ys, x0:x1] = 15
+        result[0:line_px, :] = 15
+        result[-line_px:, :] = 15
+        result[:, 0:line_px] = 15
+        result[:, -line_px:] = 15
+
+        return Image.fromarray(result, mode="RGB")
+    except Exception as e:
+        st.error(f"Mondrian: {e}"); return img
+
+
+def glitch_van_gogh(img, turbolenza=0.6, pennellata=0.5, saturazione=0.5):
+    """Pittura ad olio 'Notte Stellata': tensore di struttura (Sobel + blur)
+    per trovare l'orientamento locale dei contorni -> pennellate direzionali
+    (smear lungo la tangente, non a caso). Vortice gaussiano centrato sul
+    punto piu' luminoso dell'immagine, rotazione che decade con la distanza.
+    Quantizzazione + boost colore finale per l'effetto materico.
+
+    turbolenza  : 0-1, forza del vortice attorno al punto piu' luminoso
+    pennellata  : 0-1, lunghezza dello smear direzionale (pennellata)
+    saturazione : 0-1, boost colore + posterizzazione materica
+    """
+    try:
+        rgb = np.array(img.convert("RGB"), dtype=np.float32)
+        h, w = rgb.shape[:2]
+        gray = (rgb[..., 0]*0.299 + rgb[..., 1]*0.587 + rgb[..., 2]*0.114) / 255.0
+
+        blurred_lum = _box_blur(gray, max(2, min(h, w) // 20))
+        cy, cx = np.unravel_index(np.argmax(blurred_lum), blurred_lum.shape)
+        yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+        dx, dy = xx - cx, yy - cy
+        r = np.sqrt(dx*dx + dy*dy)
+        R = min(h, w) * 0.55
+        k = turbolenza * 2.8
+        angle = k * np.exp(-(r / R) ** 2)
+        cos_a, sin_a = np.cos(angle), np.sin(angle)
+        src_x = cx + dx*cos_a - dy*sin_a
+        src_y = cy + dx*sin_a + dy*cos_a
+        ix = np.clip(np.round(src_x).astype(np.int32), 0, w - 1)
+        iy = np.clip(np.round(src_y).astype(np.int32), 0, h - 1)
+        swirled = rgb[iy, ix]
+
+        sw_gray = (swirled[..., 0]*0.299 + swirled[..., 1]*0.587 + swirled[..., 2]*0.114) / 255.0
+        gx, gy = _sobel(sw_gray)
+        Jxx = _box_blur(gx * gx, 2)
+        Jyy = _box_blur(gy * gy, 2)
+        Jxy = _box_blur(gx * gy, 2)
+        theta = 0.5 * np.arctan2(2 * Jxy, (Jxx - Jyy) + 1e-6)
+
+        L = 2.0 + pennellata * 16.0
+        N = 7
+        acc = np.zeros_like(swirled)
+        ct, st_ = np.cos(theta), np.sin(theta)
+        for t in np.linspace(-L / 2, L / 2, N):
+            sx = np.clip(np.round(xx + t * ct).astype(np.int32), 0, w - 1)
+            sy = np.clip(np.round(yy + t * st_).astype(np.int32), 0, h - 1)
+            acc += swirled[sy, sx]
+        painted = acc / N
+
+        mean = painted.mean(axis=-1, keepdims=True)
+        painted = mean + (painted - mean) * (1.0 + saturazione * 1.4)
+        levels = 18 - saturazione * 8
+        painted = np.round(painted / levels) * levels
+
+        out = np.clip(painted, 0, 255).astype(np.uint8)
+        return Image.fromarray(out, mode="RGB")
+    except Exception as e:
+        st.error(f"Van Gogh Swirl: {e}"); return img
+
+
+def glitch_rothko(img, bande=0.4, sfumatura=0.5, grana=0.4):
+    """Color field alla Rothko: individua i confini di banda orizzontale nei
+    punti di massima variazione di luminanza (non griglia fissa), riempie
+    ogni banda col colore medio reale, feathering gaussiano ai bordi
+    (bleed morbido tipico), grana di tela sovrapposta.
+
+    bande     : 0-1, numero di bande di colore (2-5)
+    sfumatura : 0-1, quanto le bande sfumano l'una nell'altra
+    grana     : 0-1, intensita' della grana di tela
+    """
+    try:
+        rgb = np.array(img.convert("RGB"), dtype=np.float32)
+        h, w = rgb.shape[:2]
+        lum = rgb[..., 0]*0.299 + rgb[..., 1]*0.587 + rgb[..., 2]*0.114
+        row_mean = lum.mean(axis=1)
+        row_mean_s = _box_blur(row_mean.reshape(-1, 1), max(2, h // 40)).ravel()
+
+        n_bands = 2 + round(bande * 3)
+        grad = np.abs(np.diff(row_mean_s))
+        min_gap = h // (n_bands * 2)
+        cuts = []
+        grad_work = grad.copy()
+        for _ in range(n_bands - 1):
+            idx = int(np.argmax(grad_work))
+            if grad_work[idx] <= 0:
+                break
+            cuts.append(idx + 1)
+            lo, hi = max(0, idx - min_gap), min(len(grad_work), idx + min_gap)
+            grad_work[lo:hi] = -1
+        cuts = sorted(cuts)
+        bounds = [0] + cuts + [h]
+
+        field = np.zeros_like(rgb)
+        for i in range(len(bounds) - 1):
+            y0, y1 = bounds[i], bounds[i + 1]
+            if y1 <= y0:
+                continue
+            margin = max(1, (y1 - y0) // 6)
+            core = rgb[y0 + margin:max(y0 + margin + 1, y1 - margin), :]
+            color = core.reshape(-1, 3).mean(axis=0)
+            field[y0:y1, :] = color
+
+        feather_r = int(2 + sfumatura * (h * 0.06))
+        soft = np.stack([_box_blur(field[..., c], feather_r) for c in range(3)], axis=-1)
+        mix = 0.25 + sfumatura * 0.6
+        out = field * (1 - mix) + soft * mix
+
+        rng = np.random.default_rng(7)
+        noise = rng.normal(0, 1, (h, w))
+        noise = _box_blur(noise, 1)
+        noise = (noise - noise.mean()) / (noise.std() + 1e-6)
+        out = out * (1 + noise[..., None] * grana * 0.10)
+
+        out = np.clip(out, 0, 255).astype(np.uint8)
+        return Image.fromarray(out, mode="RGB")
+    except Exception as e:
+        st.error(f"Rothko: {e}"); return img
+
+
+def glitch_lichtenstein_comic(img, contrasto=0.5, dimensione_puntini=0.5, spessore_contorno=0.4):
+    """Pop-art fumetto: rilevo i bordi (Sobel) e li dilato per il contorno nero
+    spesso; quantizzo i colori a pochi livelli piatti e saturi; sovrappongo
+    una vera griglia di puntini Ben-Day (dot-screen) la cui dimensione per
+    punto dipende dalla luminanza locale, limitata alle zone di mezzotono
+    (le luci restano pulite, le ombre non affogano nei puntini).
+
+    contrasto           : 0-1, saturazione e numero di livelli colore piatti
+    dimensione_puntini   : 0-1, dimensione della cella dei puntini Ben-Day
+    spessore_contorno    : 0-1, spessore del contorno nero (dilatazione bordi)
+    """
+    try:
+        rgb = np.array(img.convert("RGB"), dtype=np.float32)
+        h, w = rgb.shape[:2]
+        gray = (rgb[..., 0]*0.299 + rgb[..., 1]*0.587 + rgb[..., 2]*0.114) / 255.0
+
+        mean = rgb.mean(axis=-1, keepdims=True)
+        sat_boost = 1.0 + contrasto * 1.2
+        boosted = np.clip(mean + (rgb - mean) * sat_boost, 0, 255)
+        levels = max(2, round(5 - contrasto * 3))
+        step = 255.0 / levels
+        flat = np.round(boosted / step) * step
+
+        cell = max(3, round(4 + dimensione_puntini * 10))
+        yy, xx = np.mgrid[0:h, 0:w]
+        cyc_x = (xx % cell) - cell / 2.0
+        cyc_y = (yy % cell) - cell / 2.0
+        dist = np.sqrt(cyc_x**2 + cyc_y**2)
+        dot_radius = (1.0 - gray) * (cell * 0.62)
+        dot_mask = dist < dot_radius
+        midtone = (gray > 0.15) & (gray < 0.80)
+        dot_mask = dot_mask & midtone
+
+        ink = np.array([25, 25, 30], dtype=np.float32)
+        with_dots = flat.copy()
+        with_dots[dot_mask] = with_dots[dot_mask] * 0.35 + ink * 0.65
+
+        gx, gy = _sobel(gray)
+        edge_mag = np.sqrt(gx*gx + gy*gy)
+        thr = np.percentile(edge_mag, 100 - 12)
+        edge_mask = edge_mag > max(thr, 0.05)
+        dilate_iters = max(0, round(spessore_contorno * 3))
+        for _ in range(dilate_iters):
+            edge_mask = (edge_mask
+                         | np.roll(edge_mask, 1, axis=0) | np.roll(edge_mask, -1, axis=0)
+                         | np.roll(edge_mask, 1, axis=1) | np.roll(edge_mask, -1, axis=1))
+
+        out = with_dots.copy()
+        out[edge_mask] = [10, 10, 12]
+
+        out = np.clip(out, 0, 255).astype(np.uint8)
+        return Image.fromarray(out, mode="RGB")
+    except Exception as e:
+        st.error(f"Lichtenstein Comic: {e}"); return img
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  CATALOGO EFFETTI
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1250,6 +1543,11 @@ EFFECTS = [
         ("Iterazioni",     0.0, 1.0, 0.4, 0.05, "fb_iter"),
         ("Decay",          0.0, 1.0, 0.5, 0.05, "fb_decay"),
     ]),
+    ("lichtenstein_comic", "Lichtenstein Comic", "💬", glitch_lichtenstein_comic, [
+        ("Contrasto Colori",   0.0, 1.0, 0.5, 0.05, "li_contrast"),
+        ("Dimensione Puntini", 0.0, 1.0, 0.5, 0.05, "li_dots"),
+        ("Spessore Contorno",  0.0, 1.0, 0.4, 0.05, "li_outline"),
+    ]),
     ("mirror_kal", "Mirror Kaleido.", "🪞", glitch_mirror_kaleidoscope, [
         ("Specchi (4/6/8)", 0.0, 1.0, 0.3, 0.1,  "mk_mirrors"),
         ("Rotazione",       0.0, 1.0, 0.0, 0.05, "mk_rot"),
@@ -1259,6 +1557,11 @@ EFFECTS = [
         ("Frequenza 1",    0.0, 1.0, 0.4, 0.05, "mo_f1"),
         ("Frequenza 2",    0.0, 1.0, 0.6, 0.05, "mo_f2"),
         ("Angolo",         0.0, 1.0, 0.3, 0.05, "mo_ang"),
+    ]),
+    ("mondrian", "Mondrian", "🟦", glitch_mondrian, [
+        ("Complessità",     0.0, 1.0, 0.55, 0.05, "mn_complex"),
+        ("Spessore Linee",  0.0, 1.0, 0.5,  0.05, "mn_lines"),
+        ("Vivacità Colori", 0.0, 1.0, 0.6,  0.05, "mn_vivid"),
     ]),
     ("neon_glow", "Neon Glow", "💡", glitch_neon_glow, [
         ("Soglia bordi",   0.0, 1.0, 0.3, 0.05, "ng_thresh"),
@@ -1310,6 +1613,11 @@ EFFECTS = [
         ("Dithering",      0.0, 1.0, 0.5, 0.05, "rp_dit"),
         ("Dim. Pixel",     0.2, 3.0, 1.0, 0.1, "rp_pix"),
     ]),
+    ("rothko", "Rothko", "🟪", glitch_rothko, [
+        ("Bande",       0.0, 1.0, 0.4, 0.05, "rk_bands"),
+        ("Sfumatura",   0.0, 1.0, 0.5, 0.05, "rk_feather"),
+        ("Grana Tela",  0.0, 1.0, 0.4, 0.05, "rk_grain"),
+    ]),
     ("rutt_etra", "Rutt-Etra", "📺⚡", glitch_rutt_etra, [
         ("Intensità",      0.0, 2.0, 1.0, 0.1, "re_int"),
         ("Densità Linee",  0.2, 2.0, 1.0, 0.1, "re_spc"),
@@ -1345,6 +1653,11 @@ EFFECTS = [
         ("Velocità",       0.0, 1.0, 0.5, 0.05, "tz_speed"),
         ("Color Shift",    0.0, 1.0, 0.3, 0.05, "tz_col"),
     ]),
+    ("van_gogh_swirl", "Van Gogh Swirl", "🌌", glitch_van_gogh, [
+        ("Turbolenza",  0.0, 1.0, 0.6, 0.05, "vg_turb"),
+        ("Pennellata",  0.0, 1.0, 0.5, 0.05, "vg_brush"),
+        ("Saturazione", 0.0, 1.0, 0.5, 0.05, "vg_sat"),
+    ]),
     ("vhs", "VHS", "📺", glitch_vhs, [
         ("Intensità",      0.0, 2.0, 1.0, 0.1,  "vhs_int"),
         ("Scanlines",      0.0, 2.0, 1.0, 0.1,  "vhs_scan"),
@@ -1376,8 +1689,10 @@ EFFECT_QUOTES = {
     "duotone":          "Due colori soltanto. La sintesi e' la forma piu' alta.",
     "halftone":         "La stampa ha dissolto l'immagine. Il punto e' tutto cio' che resta.",
     "image_feedback":   "Lo schermo si e' guardato allo specchio. L'infinito e' iniziato.",
+    "lichtenstein_comic": "Il punto e' l'unita' minima dell'emozione stampata. Whaam.",
     "mirror_kal":       "Gli specchi si sono moltiplicati. La simmetria e' diventata religione.",
     "moire":            "Le griglie si sono scontrate. Il pattern e' nato dal conflitto.",
+    "mondrian":         "Linee nere, campi di colore puro. L'ordine e' geometria, non decorazione.",
     "neon_glow":        "I bordi si sono accesi. Il buio esalta la luce.",
     "noise":            "Il segnale e' collassato. Il rumore ha preso il controllo.",
     "oil_paint":        "Il pennello ha ridisegnato la realta'. La texture ha vinto sul pixel.",
@@ -1388,6 +1703,7 @@ EFFECT_QUOTES = {
     "posterize":        "Il colore e' stato ridotto all'essenziale. La serigrafia non perdona.",
     "psychedelic":      "L'hue ha ruotato oltre il visibile. La realta' e' soggettiva.",
     "retro_palette":    "Sedici colori bastano per ricordare tutto. Il pixel e' tornato all'origine.",
+    "rothko":           "Grandi campi di colore che respirano piano. Nessun dettaglio, solo soglia.",
     "rutt_etra":        "Lo scanner ha riscritto la riga secondo la luce. Il segnale e' diventato forma.",
     "scanline_burn":    "Il tubo e' bruciato. Il CRT ricorda ancora.",
     "solarize":         "La luce si e' invertita. La camera oscura ha tradito l'originale.",
@@ -1395,6 +1711,7 @@ EFFECT_QUOTES = {
     "temporal_bands":   "Ogni riga ricorda un istante diverso. Il tempo non e' piu' uno solo.",
     "thermal":          "Il calore ha riscritto i colori. La temperatura e' la nuova forma.",
     "tunnel_zoom":      "L'immagine e' collassata verso l'interno. Il tunnel non ha fondo.",
+    "van_gogh_swirl":   "Il cielo si muove anche quando l'immagine e' ferma. Vortici, non pennellate.",
     "vhs":              "Il nastro ha consumato i colori. La memoria e' distorta.",
     "wave_warp":        "La materia e' diventata liquida. La forma e' un'illusione.",
 }
@@ -1413,8 +1730,10 @@ EFFECT_ENGINES = {
     "duotone":          "dual_color_engine",
     "halftone":         "halftone_dot_engine",
     "image_feedback":   "recursive_zoom_engine",
+    "lichtenstein_comic": "bendday_dotscreen_edge_engine",
     "mirror_kal":       "radial_symmetry_engine",
     "moire":            "grid_interference_engine",
+    "mondrian":         "recursive_bsp_destijl_engine",
     "neon_glow":        "edge_neon_engine",
     "noise":            "entropy_noise_core",
     "oil_paint":        "kuwahara_paint_engine",
@@ -1425,6 +1744,7 @@ EFFECT_ENGINES = {
     "posterize":        "color_quantize_engine",
     "psychedelic":      "hue_rotation_core",
     "retro_palette":    "c64_palette_quantize_engine",
+    "rothko":           "band_segmentation_feather_engine",
     "rutt_etra":        "scan_luminance_engine",
     "scanline_burn":    "crt_burn_engine",
     "solarize":         "highlight_invert_engine",
@@ -1432,6 +1752,7 @@ EFFECT_ENGINES = {
     "temporal_bands":   "temporal_band_slicer_engine",
     "thermal":          "false_color_engine",
     "tunnel_zoom":      "tunnel_zoom_engine",
+    "van_gogh_swirl":   "structure_tensor_vortex_engine",
     "vhs":              "magnetic_tape_engine",
     "wave_warp":        "sinusoidal_warp_engine",
 }
