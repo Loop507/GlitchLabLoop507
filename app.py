@@ -6,7 +6,11 @@ import zipfile
 import random
 import colorsys
 from datetime import datetime
-from scipy.ndimage import uniform_filter
+try:
+    from scipy.ndimage import uniform_filter as _scipy_uniform_filter
+    _HAS_SCIPY = True
+except ImportError:
+    _HAS_SCIPY = False
 
 st.set_page_config(page_title="GlitchLabLoop507", layout="wide")
 st.title("🔥 GlitchLabLoop507")
@@ -1197,16 +1201,32 @@ def glitch_temporal_bands(img, intensity=0.7, ampiezza_bande=0.5, spostamento=0.
         st.error(f"Temporal Band Slicer: {e}"); return img
 
 
+def _box_blur_numpy(a, r):
+    """Box blur via cumsum, pura numpy (fallback se scipy non e' installato)."""
+    size = 2 * r + 1
+    pad = [(r, r), (r, r)] + [(0, 0)] * (a.ndim - 2)
+    ap = np.pad(a, pad, mode="reflect")
+    c = np.cumsum(np.cumsum(ap, axis=0), axis=1)
+    c = np.pad(c, [(1, 0), (1, 0)] + [(0, 0)] * (a.ndim - 2), mode="constant")
+    h, w = a.shape[0], a.shape[1]
+    return (c[size:size+h, size:size+w] - c[0:h, size:size+w]
+            - c[size:size+h, 0:w] + c[0:h, 0:w]) / (size * size)
+
+
 def _box_blur(a, r):
-    """Box blur veloce via scipy.ndimage.uniform_filter (C-ottimizzato, molto
-    piu' rapido della versione cumsum fatta in casa su immagini grandi)."""
+    """Box blur veloce via scipy.ndimage.uniform_filter (C-ottimizzato); se
+    scipy non e' disponibile (es. manca dal requirements.txt su Streamlit
+    Cloud) ricade automaticamente sulla versione pura numpy, piu' lenta ma
+    sempre funzionante — l'app non si rompe mai per questa dipendenza."""
     if r < 1:
         return a
-    size = 2 * r + 1
-    if a.ndim == 2:
-        return uniform_filter(a, size=size, mode="reflect")
-    axes_size = [size, size] + [1] * (a.ndim - 2)
-    return uniform_filter(a, size=axes_size, mode="reflect")
+    if _HAS_SCIPY:
+        size = 2 * r + 1
+        if a.ndim == 2:
+            return _scipy_uniform_filter(a, size=size, mode="reflect")
+        axes_size = [size, size] + [1] * (a.ndim - 2)
+        return _scipy_uniform_filter(a, size=axes_size, mode="reflect")
+    return _box_blur_numpy(a, r)
 
 
 def _downscale_for_work(img, max_dim):
