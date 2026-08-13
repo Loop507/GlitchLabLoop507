@@ -19,7 +19,10 @@ st.write("Carica una foto e applica 29 effetti glitch — Live o Manuale.")
 
 def img_to_bytes(img: Image.Image) -> bytes:
     buf = io.BytesIO()
-    img.save(buf, format="PNG")
+    # compress_level basso: su immagini glitch/rumorose il guadagno di
+    # dimensione del livello massimo (default 6) e' minimo, ma il costo in
+    # tempo e' alto — livello 1 e' quasi il doppio piu' veloce a parita' di peso.
+    img.save(buf, format="PNG", compress_level=1)
     return buf.getvalue()
 
 
@@ -2243,35 +2246,59 @@ if uploaded_file is not None:
                 is_live_target = live_mode and (key == live_effect_key)
                 needs_process = (
                     should_process
-                    or (is_live_target and (params_changed or st.session_state.get(f"img_{key}") is None))
+                    or (is_live_target and (params_changed or st.session_state.get(f"img_prev_{key}") is None))
                     or (not live_mode and params_changed)
-                    or (transparency_toggled and st.session_state.get(f"img_{key}") is not None)
+                    or (transparency_toggled and st.session_state.get(f"img_prev_{key}") is not None)
                 )
 
                 if needs_process:
-                    result_img = fn(img, *vals)
-                    if keep_transparency and original_alpha is not None:
-                        result_img = result_img.convert("RGBA")
-                        alpha_to_apply = original_alpha
-                        if result_img.size != alpha_to_apply.size:
-                            alpha_to_apply = alpha_to_apply.resize(result_img.size)
-                        result_img.putalpha(alpha_to_apply)
-                    st.session_state[f"img_{key}"]      = img_to_bytes(result_img)
-                    st.session_state[f"img_prev_{key}"] = img_to_preview_bytes(result_img)
-                    st.session_state[f"rep_{key}"]    = make_report(
-                        key, label, img.size, vals, [s[0] for s in sliders], ts)
-                    st.session_state[f"params_{key}"] = vals
-                    st.session_state.processed        = True
+                    with st.spinner(f"Elaborazione {label}..."):
+                        result_img = fn(img, *vals)
+                        if keep_transparency and original_alpha is not None:
+                            result_img = result_img.convert("RGBA")
+                            alpha_to_apply = original_alpha
+                            if result_img.size != alpha_to_apply.size:
+                                alpha_to_apply = alpha_to_apply.resize(result_img.size)
+                            result_img.putalpha(alpha_to_apply)
+                        st.session_state[f"img_obj_{key}"]  = result_img
+                        st.session_state[f"img_prev_{key}"] = img_to_preview_bytes(result_img)
+                        st.session_state[f"rep_{key}"]      = make_report(
+                            key, label, img.size, vals, [s[0] for s in sliders], ts)
+                        st.session_state[f"params_{key}"]   = vals
+                        st.session_state.processed          = True
+                        # Il PNG a piena risoluzione e' l'operazione piu' lenta (puo'
+                        # costare quanto il calcolo dell'effetto stesso su foto grandi):
+                        # lo si prepara automaticamente solo con "Genera tutti", non
+                        # ad ogni singolo movimento di slider — altrimenti ogni ritocco
+                        # pagherebbe due volte il costo (calcolo + codifica PNG) e
+                        # l'interfaccia sembrerebbe bloccarsi.
+                        if should_process:
+                            st.session_state[f"img_{key}"] = img_to_bytes(result_img)
+                            st.session_state[f"img_full_params_{key}"] = vals
+                        else:
+                            st.session_state.pop(f"img_{key}", None)
 
-                if st.session_state.get(f"img_{key}"):
-                    img_bytes = st.session_state[f"img_{key}"]
-                    prev_bytes = st.session_state.get(f"img_prev_{key}", img_bytes)
+                if st.session_state.get(f"img_prev_{key}"):
+                    prev_bytes = st.session_state[f"img_prev_{key}"]
                     rep_bytes = st.session_state[f"rep_{key}"]
                     st.image(prev_bytes, caption=f"{emoji} {label}", width=650)
                     dl1, dl2 = st.columns(2)
-                    dl1.download_button("⬇️ Immagine", img_bytes,
-                                        f"{key}_glitch.png", "image/png",
-                                        key=f"dl_img_{key}")
+
+                    full_ready = (
+                        st.session_state.get(f"img_{key}") is not None
+                        and st.session_state.get(f"img_full_params_{key}") == vals
+                    )
+                    if not full_ready:
+                        if dl1.button("🔄 Prepara download (piena risoluzione)", key=f"prep_{key}"):
+                            with st.spinner("Preparazione file..."):
+                                result_img = st.session_state[f"img_obj_{key}"]
+                                st.session_state[f"img_{key}"] = img_to_bytes(result_img)
+                                st.session_state[f"img_full_params_{key}"] = vals
+                                full_ready = True
+                    if full_ready:
+                        dl1.download_button("⬇️ Immagine", st.session_state[f"img_{key}"],
+                                            f"{key}_glitch.png", "image/png",
+                                            key=f"dl_img_{key}")
                     dl2.download_button("📄 Report", rep_bytes,
                                         f"{key}_report.txt", "text/plain",
                                         key=f"dl_rep_{key}")
@@ -2287,6 +2314,8 @@ if uploaded_file is not None:
                 "application/zip",
                 key="dl_zip_all"
             )
+            st.caption("Lo ZIP include solo gli effetti già preparati a piena risoluzione "
+                       "(via 'Genera tutti' o il bottone 'Prepara download' su ciascun effetto).")
 
     except Exception as e:
         st.error(f"Errore: {e}")
