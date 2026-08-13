@@ -481,7 +481,7 @@ def glitch_analogic(img, sync_loss=0.5, color_bleed=0.4, static=0.3):
         if sync_loss > 0.3:
             n_blocks = int(3 + 8 * sync_loss)
             for _ in range(n_blocks):
-                y0 = random.randint(0, h - 5)
+                y0 = random.randint(0, max(0, h - 5))
                 y1 = min(y0 + random.randint(3, 20), h)
                 shift = int(np.random.normal(0, 40 * sync_loss))
                 arr[y0:y1] = np.roll(arr[y0:y1], shift, axis=1)
@@ -899,8 +899,8 @@ def glitch_tunnel_zoom(img, strati=0.5, velocita=0.5, color_shift=0.3):
 
         for i in range(n):
             scale = 1.0 / (1.2 + i * 0.5 * velocita)
-            nw = max(4, int(w * scale))
-            nh = max(4, int(h * scale))
+            nw = max(1, min(w, int(w * scale)))
+            nh = max(1, min(h, int(h * scale)))
             small = np.array(
                 Image.fromarray(arr.astype(np.uint8)).resize((nw, nh), Image.BILINEAR),
                 dtype=np.float32
@@ -1513,6 +1513,8 @@ def glitch_rothko(img, bande=0.4, sfumatura=0.5, grana=0.4):
         cuts = []
         grad_work = grad.copy()
         for _ in range(n_bands - 1):
+            if grad_work.size == 0:
+                break
             idx = int(np.argmax(grad_work))
             if grad_work[idx] <= 0:
                 break
@@ -1529,6 +1531,8 @@ def glitch_rothko(img, bande=0.4, sfumatura=0.5, grana=0.4):
                 continue
             margin = max(1, (y1 - y0) // 6)
             core = rgb[y0 + margin:max(y0 + margin + 1, y1 - margin), :]
+            if core.shape[0] == 0:
+                core = rgb[y0:y1, :]   # banda troppo piccola per il margine: uso tutta la banda
             color = core.reshape(-1, 3).mean(axis=0)
             field[y0:y1, :] = color
 
