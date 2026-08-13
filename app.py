@@ -23,6 +23,26 @@ def img_to_bytes(img: Image.Image) -> bytes:
     return buf.getvalue()
 
 
+def img_to_preview_bytes(img: Image.Image, max_dim: int = 900) -> bytes:
+    """Genera un'anteprima leggera (JPEG, lato lungo max_dim) da mostrare a
+    schermo con st.image(). Streamlit ritrasmette al browser TUTTE le
+    immagini di TUTTI gli effetti gia' generati a ogni singola interazione
+    (ogni slider, ogni click, ovunque nella pagina causa un rerun completo):
+    usare qui il PNG a piena risoluzione — anche solo su una decina di
+    effetti generati su una foto da alcuni megapixel — significa spedire
+    decine di MB ad ogni interazione, rendendo l'interfaccia lentissima o
+    apparentemente bloccata. Il file a piena risoluzione resta comunque
+    disponibile per il download e lo ZIP (vedi img_to_bytes)."""
+    preview = img.convert("RGB") if img.mode == "RGBA" else img
+    w, h = preview.size
+    if max(w, h) > max_dim:
+        scale = max_dim / max(w, h)
+        preview = preview.resize((max(1, round(w*scale)), max(1, round(h*scale))), Image.LANCZOS)
+    buf = io.BytesIO()
+    preview.save(buf, format="JPEG", quality=85)
+    return buf.getvalue()
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  EFFETTI
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2236,7 +2256,8 @@ if uploaded_file is not None:
                         if result_img.size != alpha_to_apply.size:
                             alpha_to_apply = alpha_to_apply.resize(result_img.size)
                         result_img.putalpha(alpha_to_apply)
-                    st.session_state[f"img_{key}"]    = img_to_bytes(result_img)
+                    st.session_state[f"img_{key}"]      = img_to_bytes(result_img)
+                    st.session_state[f"img_prev_{key}"] = img_to_preview_bytes(result_img)
                     st.session_state[f"rep_{key}"]    = make_report(
                         key, label, img.size, vals, [s[0] for s in sliders], ts)
                     st.session_state[f"params_{key}"] = vals
@@ -2244,8 +2265,9 @@ if uploaded_file is not None:
 
                 if st.session_state.get(f"img_{key}"):
                     img_bytes = st.session_state[f"img_{key}"]
+                    prev_bytes = st.session_state.get(f"img_prev_{key}", img_bytes)
                     rep_bytes = st.session_state[f"rep_{key}"]
-                    st.image(img_bytes, caption=f"{emoji} {label}", width=650)
+                    st.image(prev_bytes, caption=f"{emoji} {label}", width=650)
                     dl1, dl2 = st.columns(2)
                     dl1.download_button("⬇️ Immagine", img_bytes,
                                         f"{key}_glitch.png", "image/png",
