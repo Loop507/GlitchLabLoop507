@@ -2049,6 +2049,50 @@ EFFECT_QUOTES = {
     "wave_warp":        "La materia e' diventata liquida. La forma e' un'illusione.",
 }
 
+EFFECT_QUOTES_EN = {
+    "analogic":         "The signal lost sync. The antenna no longer answers.",
+    "ascii_art":        "The image has become text. The character has replaced color.",
+    "channel_swap":     "The channels traded places. Color no longer recognizes itself.",
+    "chromatic":        "The prism split the light. The colors never return.",
+    "crosshatch":       "Hatching has replaced color. The engraving does not lie.",
+    "datamosh":         "The frame got stuck. Time no longer flows.",
+    "destruction_art":  "The image has been cut apart. Collage is the only truth.",
+    "displacement_map": "The pixel moved, following itself. Space is curved.",
+    "distruttivo":      "The blocks have shifted. Structure no longer exists.",
+    "drip":             "Gravity chose the colors. The pixel obeyed the fall.",
+    "duotone":          "Only two colors. Synthesis is the highest form.",
+    "halftone":         "Printing dissolved the image. The dot is all that remains.",
+    "image_feedback":   "The screen looked at itself in the mirror. Infinity began.",
+    "klimt_mosaico":    "Gold doesn't decorate the surface, it replaces it. Every tessera is a fragment of eternity.",
+    "lichtenstein_comic": "The dot is the smallest unit of printed emotion. Whaam.",
+    "mirror_kal":       "The mirrors multiplied. Symmetry became religion.",
+    "moire":            "The grids collided. The pattern was born from conflict.",
+    "mondrian":         "Black lines, fields of pure color. Order is geometry, not decoration.",
+    "munch_onde":       "The sky screams in concentric circles. Color doesn't describe, it shouts.",
+    "neon_glow":        "The edges lit up. Darkness makes the light shine.",
+    "noise":            "The signal collapsed. Noise took control.",
+    "oil_paint":        "The brush redrew reality. Texture won over pixel.",
+    "op_art_circles":   "The circles hypnotized the shape. The eye finds no rest.",
+    "pixel_sort":       "Light chose its own order. The pixel obeyed.",
+    "polar":            "Space folded in on itself. The center no longer exists.",
+    "pop_art_warhol":   "Fifteen minutes of fame, fixed in an acid frame. The screen print never forgives.",
+    "posterize":        "Color has been reduced to its essence. The screen print never forgives.",
+    "psychedelic":      "Hue rotated past the visible. Reality is subjective.",
+    "retro_palette":    "Sixteen colors are enough to remember everything. The pixel returned to its origin.",
+    "rothko":           "Large fields of color breathing slowly. No detail, only threshold.",
+    "rutt_etra":        "The scanner rewrote the line according to the light. The signal became form.",
+    "scanline_burn":    "The tube is burnt. The CRT still remembers.",
+    "solarize":         "The light inverted itself. The darkroom betrayed the original.",
+    "stippling":        "The dot is the smallest unit of truth. A million dots, one image.",
+    "temporal_bands":   "Every row remembers a different instant. Time is no longer singular.",
+    "thermal":          "Heat rewrote the colors. Temperature is the new form.",
+    "tunnel_zoom":      "The image collapsed inward. The tunnel has no bottom.",
+    "van_gogh_swirl":   "The sky moves even while the image stands still. Vortices, not brushstrokes.",
+    "vhs":              "The tape consumed the colors. Memory is distorted.",
+    "wave_interference": "The grid learned the light. Every line carries the memory of a face.",
+    "wave_warp":        "Matter has become liquid. Form is an illusion.",
+}
+
 EFFECT_ENGINES = {
     "analogic":         "analog_sync_engine",
     "ascii_art":        "glyph_luminance_engine",
@@ -2114,27 +2158,30 @@ def make_report(effect_key, effect_label, img_size, param_vals, param_labels, ts
     mpx = w * h / 1_000_000
     date_str, time_str = ts.split(" ")
     engine = EFFECT_ENGINES.get(effect_key, "unknown_engine")
-    quote  = EFFECT_QUOTES.get(effect_key, "Il glitch e' la verita'.")
+    quote_it = EFFECT_QUOTES.get(effect_key, "Il glitch e' la verita'.")
+    quote_en = EFFECT_QUOTES_EN.get(effect_key, "The glitch is the truth.")
     avg_pct = int(sum(param_vals) / len(param_vals) / 2.0 * 100) if param_vals else 0
     lines = [
         f"GLITCHLAB [IMAGE] // {effect_label.upper()} // 01 //",
-        f":: MOTORE: {engine} [v3.0]",
-        f":: PROCESSO: Corruzione Singolo Strato — {effect_label.upper()}",
+        f":: MOTORE / ENGINE: {engine} [v3.0]",
+        f":: PROCESSO / PROCESS: Corruzione Singolo Strato — {effect_label.upper()} "
+        f"/ Single-Layer Corruption — {effect_label.upper()}",
         "",
-        f'"{quote}"',
+        f'"{quote_it}"',
+        f'"{quote_en}"',
         "",
         "> TECHNICAL LOG SHEET:",
         f"* Asset: {w} x {h} px  ({mpx:.2f} Mpx)",
-        f"* Data: {date_str}  //  {time_str}",
+        f"* Data / Date: {date_str}  //  {time_str}",
         f"* Effect Index: {avg_pct}%",
         "",
-        f"> {effect_label.upper()} ENGINE:",
+        f"> {effect_label.upper()} ENGINE — PARAMETRI / PARAMETERS:",
     ]
     for label, val in zip(param_labels, param_vals):
         lines.append(f"* {label:<22}: {val:.2f}")
     lines += [
         "",
-        "> Regia e Algoritmo: Loop507",
+        "> Regia e Algoritmo / Direction & Algorithm: Loop507",
         "",
         "#glitchart #glitchlab #loop507 #digitaldestruction",
         "#signalcorruption #experimentalimage #computationalminimalism",
@@ -2214,6 +2261,69 @@ if uploaded_file is not None:
             value=False, key="live_mode"
         )
 
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        @_fragment
+        def _render_variant_explorer(entry, img, ts):
+            """Genera N varianti dello stesso effetto con parametri diversi,
+            campionati casualmente entro i range degli slider. Utile per
+            esplorare velocemente lo spazio dei parametri di un effetto senza
+            regolare gli slider uno alla volta."""
+            key, label, emoji, fn, sliders = entry
+            st.markdown("#### 🎲 Esplora varianti automatiche")
+            st.caption(f"Genera piu' versioni di **{emoji} {label}** con parametri diversi, "
+                       "campionati a caso entro i range disponibili.")
+            c1, c2 = st.columns([2, 1])
+            n_variants = c1.slider("Quante varianti", 4, 30, 12, 1, key="variant_count")
+            generate = c2.button("🎲 Genera varianti", key="variant_generate_btn")
+
+            if generate:
+                rng = random.Random()
+                variants = []
+                with st.spinner(f"Generazione di {n_variants} varianti..."):
+                    for _ in range(n_variants):
+                        rvals = []
+                        for (slabel, smin, smax, sdef, sstep, skey) in sliders:
+                            n_steps = max(1, round((smax - smin) / sstep))
+                            rv = smin + rng.randint(0, n_steps) * sstep
+                            rvals.append(round(min(smax, max(smin, rv)), 6))
+                        result_img = fn(img, *rvals)
+                        variants.append({
+                            "vals": rvals,
+                            "preview": img_to_preview_bytes(result_img, max_dim=500),
+                            "obj": result_img,
+                        })
+                st.session_state[f"variants_{key}"] = variants
+                st.session_state["variants_key_for"] = key
+
+            stored = st.session_state.get(f"variants_{key}")
+            if stored and st.session_state.get("variants_key_for") == key:
+                st.caption(f"{len(stored)} varianti generate — "
+                           f"{', '.join(s[0] for s in sliders)}")
+                cols = st.columns(4)
+                for i, v in enumerate(stored):
+                    with cols[i % 4]:
+                        param_str = " / ".join(f"{s[0]}:{val:.2f}" for s, val in zip(sliders, v["vals"]))
+                        st.image(v["preview"], caption=param_str, width=220)
+
+                if st.button("📦 Prepara ZIP di tutte le varianti (piena risoluzione)",
+                             key=f"variant_zip_{key}"):
+                    with st.spinner("Codifica ZIP in corso..."):
+                        buf = io.BytesIO()
+                        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                            for i, v in enumerate(stored):
+                                png_bytes = img_to_bytes(v["obj"])
+                                param_str = "_".join(f"{s[0]}{val:.2f}" for s, val in zip(sliders, v["vals"]))
+                                zf.writestr(f"{key}_variante_{i+1:02d}_{param_str}.png", png_bytes)
+                        st.session_state[f"variants_zip_{key}"] = buf.getvalue()
+                if st.session_state.get(f"variants_zip_{key}"):
+                    st.download_button(
+                        "⬇️ Scarica ZIP varianti",
+                        st.session_state[f"variants_zip_{key}"],
+                        f"{key}_varianti.zip", "application/zip",
+                        key=f"dl_variant_zip_{key}"
+                    )
+
         live_effect_key = None
         should_process = False
         if live_mode:
@@ -2226,23 +2336,27 @@ if uploaded_file is not None:
             live_effect_key = effect_keys[effect_labels.index(sel_label)]
             st.caption("💡 Solo questo effetto si aggiorna ad ogni slider. Gli altri restano fermi "
                        "all'ultima immagine generata. I download salvano l'ultimo frame generato.")
+            st.markdown("---")
+            live_entry = [e for e in EFFECTS if e[0] == live_effect_key][0]
+            _render_variant_explorer(live_entry, img, ts)
         else:
             if st.button("✨ Genera tutti gli effetti"):
                 should_process = True
         st.markdown("---")
-
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         @_fragment
         def _render_effect(key, label, emoji, fn, sliders, img, live_mode, live_effect_key,
                             should_process, keep_transparency, original_alpha,
                             transparency_toggled, ts):
             with st.expander(f"{emoji} {label}", expanded=False):
-                sc = st.columns(len(sliders))
+                col_ctrl, col_img = st.columns([1, 3])
+
                 vals = []
-                for i, (slabel, smin, smax, sdef, sstep, skey) in enumerate(sliders):
-                    v = sc[i].slider(slabel, smin, smax, sdef, sstep, key=skey)
-                    vals.append(v)
+                with col_ctrl:
+                    st.markdown("**🎛️ Parametri**")
+                    for (slabel, smin, smax, sdef, sstep, skey) in sliders:
+                        v = st.slider(slabel, smin, smax, sdef, sstep, key=skey)
+                        vals.append(v)
 
                 prev_vals = st.session_state.get(f"params_{key}")
                 if prev_vals is None:
@@ -2264,56 +2378,59 @@ if uploaded_file is not None:
                 )
 
                 if needs_process:
-                    with st.spinner(f"Elaborazione {label}..."):
-                        result_img = fn(img, *vals)
-                        if keep_transparency and original_alpha is not None:
-                            result_img = result_img.convert("RGBA")
-                            alpha_to_apply = original_alpha
-                            if result_img.size != alpha_to_apply.size:
-                                alpha_to_apply = alpha_to_apply.resize(result_img.size)
-                            result_img.putalpha(alpha_to_apply)
-                        st.session_state[f"img_obj_{key}"]  = result_img
-                        st.session_state[f"img_prev_{key}"] = img_to_preview_bytes(result_img)
-                        st.session_state[f"rep_{key}"]      = make_report(
-                            key, label, img.size, vals, [s[0] for s in sliders], ts)
-                        st.session_state[f"params_{key}"]   = vals
-                        st.session_state.processed          = True
-                        # Il PNG a piena risoluzione e' l'operazione piu' lenta (puo'
-                        # costare quanto il calcolo dell'effetto stesso su foto grandi):
-                        # lo si prepara automaticamente solo con "Genera tutti", non
-                        # ad ogni singolo movimento di slider — altrimenti ogni ritocco
-                        # pagherebbe due volte il costo (calcolo + codifica PNG) e
-                        # l'interfaccia sembrerebbe bloccarsi.
-                        if should_process:
-                            st.session_state[f"img_{key}"] = img_to_bytes(result_img)
-                            st.session_state[f"img_full_params_{key}"] = vals
-                        else:
-                            st.session_state.pop(f"img_{key}", None)
+                    with col_img:
+                        with st.spinner(f"Elaborazione {label}..."):
+                            result_img = fn(img, *vals)
+                            if keep_transparency and original_alpha is not None:
+                                result_img = result_img.convert("RGBA")
+                                alpha_to_apply = original_alpha
+                                if result_img.size != alpha_to_apply.size:
+                                    alpha_to_apply = alpha_to_apply.resize(result_img.size)
+                                result_img.putalpha(alpha_to_apply)
+                            st.session_state[f"img_obj_{key}"]  = result_img
+                            st.session_state[f"img_prev_{key}"] = img_to_preview_bytes(result_img)
+                            st.session_state[f"rep_{key}"]      = make_report(
+                                key, label, img.size, vals, [s[0] for s in sliders], ts)
+                            st.session_state[f"params_{key}"]   = vals
+                            st.session_state.processed          = True
+                            # Il PNG a piena risoluzione e' l'operazione piu' lenta (puo'
+                            # costare quanto il calcolo dell'effetto stesso su foto grandi):
+                            # lo si prepara automaticamente solo con "Genera tutti", non
+                            # ad ogni singolo movimento di slider — altrimenti ogni ritocco
+                            # pagherebbe due volte il costo (calcolo + codifica PNG) e
+                            # l'interfaccia sembrerebbe bloccarsi.
+                            if should_process:
+                                st.session_state[f"img_{key}"] = img_to_bytes(result_img)
+                                st.session_state[f"img_full_params_{key}"] = vals
+                            else:
+                                st.session_state.pop(f"img_{key}", None)
 
                 if st.session_state.get(f"img_prev_{key}"):
                     prev_bytes = st.session_state[f"img_prev_{key}"]
                     rep_bytes = st.session_state[f"rep_{key}"]
-                    st.image(prev_bytes, caption=f"{emoji} {label}", width=650)
-                    dl1, dl2 = st.columns(2)
+                    with col_img:
+                        st.image(prev_bytes, caption=f"{emoji} {label}", width=650)
 
-                    full_ready = (
-                        st.session_state.get(f"img_{key}") is not None
-                        and st.session_state.get(f"img_full_params_{key}") == vals
-                    )
-                    if not full_ready:
-                        if dl1.button("🔄 Prepara download (piena risoluzione)", key=f"prep_{key}"):
-                            with st.spinner("Preparazione file..."):
-                                result_img = st.session_state[f"img_obj_{key}"]
-                                st.session_state[f"img_{key}"] = img_to_bytes(result_img)
-                                st.session_state[f"img_full_params_{key}"] = vals
-                                full_ready = True
-                    if full_ready:
-                        dl1.download_button("⬇️ Immagine", st.session_state[f"img_{key}"],
-                                            f"{key}_glitch.png", "image/png",
-                                            key=f"dl_img_{key}")
-                    dl2.download_button("📄 Report", rep_bytes,
-                                        f"{key}_report.txt", "text/plain",
-                                        key=f"dl_rep_{key}")
+                    with col_ctrl:
+                        st.markdown("**⬇️ Download**")
+                        full_ready = (
+                            st.session_state.get(f"img_{key}") is not None
+                            and st.session_state.get(f"img_full_params_{key}") == vals
+                        )
+                        if not full_ready:
+                            if st.button("🔄 Prepara download\n(piena risoluzione)", key=f"prep_{key}"):
+                                with st.spinner("Preparazione file..."):
+                                    result_img = st.session_state[f"img_obj_{key}"]
+                                    st.session_state[f"img_{key}"] = img_to_bytes(result_img)
+                                    st.session_state[f"img_full_params_{key}"] = vals
+                                    full_ready = True
+                        if full_ready:
+                            st.download_button("⬇️ Immagine", st.session_state[f"img_{key}"],
+                                                f"{key}_glitch.png", "image/png",
+                                                key=f"dl_img_{key}")
+                        st.download_button("📄 Report", rep_bytes,
+                                            f"{key}_report.txt", "text/plain",
+                                            key=f"dl_rep_{key}")
 
         for key, label, emoji, fn, sliders in EFFECTS:
             _render_effect(key, label, emoji, fn, sliders, img, live_mode, live_effect_key,
