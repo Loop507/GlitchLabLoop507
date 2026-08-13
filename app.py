@@ -1321,9 +1321,12 @@ def glitch_mondrian(img, complessita=0.55, spessore=0.5, vivacita=0.6):
         BLUE = np.array([25, 55, 150])
         BLACK = np.array([18, 18, 18])
         HUES = [(0.0, RED), (0.14, YELLOW), (0.62, BLUE)]
+        # NOTA: la classificazione "bianco" richiede desaturazione (pallido),
+        # non basta essere luminoso — altrimenti colori vividi ma chiari come
+        # un cielo blu sereno (alta luminosita', saturazione media-alta)
+        # venivano scambiati per bianco e il blu spariva quasi sempre.
 
         white_s_thr = 0.42 - 0.30 * vivacita
-        white_v_thr = 0.93 - 0.08 * vivacita
 
         cuts_a = []   # tagli in coordinate dell'immagine di analisi (ridotta)
         leaves_a = []  # rettangoli foglia in coordinate di analisi
@@ -1373,7 +1376,9 @@ def glitch_mondrian(img, complessita=0.55, spessore=0.5, vivacita=0.6):
             hh, ss, vv = colorsys.rgb_to_hsv(r, g, b)
             if vv < 0.22:
                 return BLACK
-            if ss < white_s_thr or vv > white_v_thr:
+            is_pale = ss < white_s_thr
+            is_blown_highlight = vv > 0.97 and ss < (white_s_thr + 0.15)
+            if is_pale or is_blown_highlight:
                 return WHITE
             dists = [min(abs(hh - hu), 1 - abs(hh - hu)) for hu, _ in HUES]
             return HUES[int(np.argmin(dists))][1]
