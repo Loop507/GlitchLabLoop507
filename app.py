@@ -2276,9 +2276,20 @@ if uploaded_file is not None:
             c1, c2 = st.columns([2, 1])
             n_variants = c1.slider("Quante varianti", 4, 30, 12, 1, key="variant_count")
             generate = c2.button("🎲 Genera varianti", key="variant_generate_btn")
+            seed_input = st.text_input(
+                "🌱 Seed (opzionale) — lascia vuoto per farlo generare in automatico, "
+                "oppure incolla qui un seed copiato da una generazione precedente "
+                "(anche di un altro effetto) per riottenere la stessa combinazione",
+                value="", key="variant_seed"
+            ).strip()
 
             if generate:
-                rng = random.Random()
+                # Se l'utente non specifica un seed, ne generiamo uno noi e lo
+                # mostriamo: cosi' e' sempre possibile copiarlo e riusarlo in
+                # seguito (anche su un altro effetto) per riottenere esattamente
+                # la stessa sequenza di combinazioni.
+                seed_used = seed_input if seed_input else str(random.randint(100000, 999999))
+                rng = random.Random(seed_used)
                 variants = []
                 with st.spinner(f"Generazione di {n_variants} varianti..."):
                     for _ in range(n_variants):
@@ -2295,9 +2306,15 @@ if uploaded_file is not None:
                         })
                 st.session_state[f"variants_{key}"] = variants
                 st.session_state["variants_key_for"] = key
+                st.session_state[f"variants_seed_used_{key}"] = seed_used
 
             stored = st.session_state.get(f"variants_{key}")
             if stored and st.session_state.get("variants_key_for") == key:
+                seed_used = st.session_state.get(f"variants_seed_used_{key}")
+                if seed_used:
+                    st.caption("🌱 Seed di questa generazione (copialo per riusarlo, "
+                               "anche su un altro effetto):")
+                    st.code(seed_used, language=None)
                 st.caption(f"{len(stored)} varianti generate — "
                            f"{', '.join(s[0] for s in sliders)}")
                 cols = st.columns(4)
