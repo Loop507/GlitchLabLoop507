@@ -12,9 +12,18 @@ try:
 except ImportError:
     _HAS_SCIPY = False
 
+if hasattr(st, "fragment"):
+    _fragment = st.fragment
+else:
+    # Streamlit troppo vecchio (serve 1.37+): niente rerun isolato per
+    # singolo effetto, l'app resta funzionante ma torna a rieseguire
+    # l'intero script ad ogni interazione (piu' lento, mai rotto).
+    def _fragment(func):
+        return func
+
 st.set_page_config(page_title="GlitchLabLoop507", layout="wide")
 st.title("🔥 GlitchLabLoop507")
-st.write("Carica una foto e applica 29 effetti glitch — Live o Manuale.")
+st.write("Carica una foto e applica 41 effetti glitch — Live o Manuale.")
 
 
 def img_to_bytes(img: Image.Image) -> bytes:
@@ -2224,7 +2233,10 @@ if uploaded_file is not None:
 
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        for key, label, emoji, fn, sliders in EFFECTS:
+        @_fragment
+        def _render_effect(key, label, emoji, fn, sliders, img, live_mode, live_effect_key,
+                            should_process, keep_transparency, original_alpha,
+                            transparency_toggled, ts):
             with st.expander(f"{emoji} {label}", expanded=False):
                 sc = st.columns(len(sliders))
                 vals = []
@@ -2302,6 +2314,11 @@ if uploaded_file is not None:
                     dl2.download_button("📄 Report", rep_bytes,
                                         f"{key}_report.txt", "text/plain",
                                         key=f"dl_rep_{key}")
+
+        for key, label, emoji, fn, sliders in EFFECTS:
+            _render_effect(key, label, emoji, fn, sliders, img, live_mode, live_effect_key,
+                            should_process, keep_transparency, original_alpha,
+                            transparency_toggled, ts)
 
         n_generate = sum(1 for key, *_ in EFFECTS if st.session_state.get(f"img_{key}"))
         if n_generate > 0:
