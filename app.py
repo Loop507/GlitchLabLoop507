@@ -1352,8 +1352,17 @@ def glitch_mondrian(img, complessita=0.55, spessore=0.5, vivacita=0.6):
 
         def recurse(x0, y0, x1, y1, depth):
             w_, h_ = x1 - x0, y1 - y0
-            min_size = min(aw, ah) * 0.11
-            if depth >= max_depth or w_ < min_size or h_ < min_size:
+            min_size = min(aw, ah) * 0.055
+            sub = lum_a[y0:y1, x0:x1]
+            # una regione "ancora mista" (es. una piccola macchia di colore
+            # isolata su sfondo scuro) ha varianza interna alta anche dopo il
+            # blur: in questo caso conviene continuare a tagliare oltre la
+            # profondita' nominale, altrimenti quella macchia viene diluita
+            # nella media della cella e sparisce (diventa nera/grigia invece
+            # del suo vero colore). hard_cap evita ricorsioni infinite.
+            still_mixed = sub.size > 0 and sub.std() > 22.0
+            hard_cap = max_depth + 4
+            if (depth >= max_depth and not still_mixed) or depth >= hard_cap or w_ < min_size or h_ < min_size:
                 leaves_a.append((x0, y0, x1, y1))
                 return
             axis, pos = best_split(x0, y0, x1, y1)
