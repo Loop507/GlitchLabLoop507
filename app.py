@@ -5,6 +5,7 @@ import io
 import zipfile
 import random
 import colorsys
+import inspect
 from datetime import datetime
 try:
     from scipy.ndimage import uniform_filter as _scipy_uniform_filter
@@ -481,7 +482,7 @@ def glitch_analogic(img, sync_loss=0.5, color_bleed=0.4, static=0.3):
         if sync_loss > 0.3:
             n_blocks = int(3 + 8 * sync_loss)
             for _ in range(n_blocks):
-                y0 = random.randint(0, h - 5)
+                y0 = random.randint(0, max(0, h - 5))
                 y1 = min(y0 + random.randint(3, 20), h)
                 shift = int(np.random.normal(0, 40 * sync_loss))
                 arr[y0:y1] = np.roll(arr[y0:y1], shift, axis=1)
@@ -899,8 +900,8 @@ def glitch_tunnel_zoom(img, strati=0.5, velocita=0.5, color_shift=0.3):
 
         for i in range(n):
             scale = 1.0 / (1.2 + i * 0.5 * velocita)
-            nw = max(4, int(w * scale))
-            nh = max(4, int(h * scale))
+            nw = max(1, min(w, int(w * scale)))
+            nh = max(1, min(h, int(h * scale)))
             small = np.array(
                 Image.fromarray(arr.astype(np.uint8)).resize((nw, nh), Image.BILINEAR),
                 dtype=np.float32
@@ -1284,7 +1285,7 @@ def _sobel(gray):
     return gx, gy
 
 
-def glitch_mondrian(img, complessita=0.55, spessore=0.5, vivacita=0.6):
+def glitch_mondrian(img, complessita=0.55, spessore=0.5, vivacita=0.6, variation_seed=None):
     """Mondrian / De Stijl: partizione ricorsiva content-aware (taglia dove la
     variazione locale e' massima). La ricerca dei tagli avviene su una copia
     ridotta e sfocata dell'immagine (elimina il rumore/texture ad alta
@@ -1295,9 +1296,15 @@ def glitch_mondrian(img, complessita=0.55, spessore=0.5, vivacita=0.6):
     altrimenti forzata al primario De Stijl piu' vicino per tonalita'
     (rosso/giallo/blu) o nero se molto scura.
 
-    complessita : 0-1, profondita' massima di ricorsione (piu' celle)
-    spessore    : 0-1, spessore delle linee nere
-    vivacita    : 0-1, quanto facilmente una cella diventa colorata anziche' bianca
+    complessita     : 0-1, profondita' massima di ricorsione (piu' celle)
+    spessore        : 0-1, spessore delle linee nere
+    vivacita        : 0-1, quanto facilmente una cella diventa colorata anziche' bianca
+    variation_seed  : opzionale. Se None (default, uso normale) la scelta del
+        taglio e' sempre quella content-aware piu' forte, deterministica. Se
+        specificato (usato dal generatore di varianti) sceglie fra i tagli
+        migliori con probabilita' pesata sulla loro forza: stessa foto, stessi
+        parametri, ma composizioni geometriche diverse fra loro — utile per
+        avere varianti visivamente distinte anziche' quasi identiche.
     """
     try:
         rgb_full = np.array(img.convert("RGB"), dtype=np.float32)
@@ -1328,32 +1335,61 @@ def glitch_mondrian(img, complessita=0.55, spessore=0.5, vivacita=0.6):
 
         white_s_thr = 0.42 - 0.30 * vivacita
 
+        variation_rng = random.Random(variation_seed) if variation_seed is not None else None
+
         cuts_a = []   # tagli in coordinate dell'immagine di analisi (ridotta)
         leaves_a = []  # rettangoli foglia in coordinate di analisi
 
         def best_split(x0, y0, x1, y1):
             sub = lum_a[y0:y1, x0:x1]
             sh, sw = sub.shape
+            candidates = []  # (axis, pos, strength)
             if sw > 10:
                 col_mean = sub.mean(axis=0)
                 grad = np.abs(np.diff(col_mean))
-                cx, cx_strength = int(np.argmax(grad)) + 1, grad.max()
-            else:
-                cx, cx_strength = sw // 2, -1
+                if grad.size > 0:
+                    k = min(3, grad.size)
+                    for idx in np.argpartition(grad, -k)[-k:]:
+                        pos = x0 + max(5, min(sw - 5, int(idx) + 1))
+                        candidates.append(("v", pos, float(grad[idx])))
             if sh > 10:
                 row_mean = sub.mean(axis=1)
                 gradr = np.abs(np.diff(row_mean))
-                cy, cy_strength = int(np.argmax(gradr)) + 1, gradr.max()
-            else:
-                cy, cy_strength = sh // 2, -1
-            if cx_strength >= cy_strength:
-                return "v", x0 + max(5, min(sw - 5, cx))
-            return "h", y0 + max(5, min(sh - 5, cy))
+                if gradr.size > 0:
+                    k = min(3, gradr.size)
+                    for idx in np.argpartition(gradr, -k)[-k:]:
+                        pos = y0 + max(5, min(sh - 5, int(idx) + 1))
+                        candidates.append(("h", pos, float(gradr[idx])))
+            if not candidates:
+                return ("v", x0 + sw // 2) if sw >= sh else ("h", y0 + sh // 2)
+            if variation_rng is None:
+                axis, pos, _ = max(candidates, key=lambda c: c[2])
+                return axis, pos
+            # scelta pesata sulla forza del gradiente: i tagli piu' netti
+            # restano i piu' probabili, ma non vince sempre lo stesso identico
+            # taglio -> varianti con composizioni geometriche diverse.
+            weights = [c[2] ** 2 + 1e-6 for c in candidates]
+            r = variation_rng.random() * sum(weights)
+            acc = 0.0
+            for c, wgt in zip(candidates, weights):
+                acc += wgt
+                if r <= acc:
+                    return c[0], c[1]
+            return candidates[-1][0], candidates[-1][1]
 
         def recurse(x0, y0, x1, y1, depth):
             w_, h_ = x1 - x0, y1 - y0
-            min_size = min(aw, ah) * 0.11
-            if depth >= max_depth or w_ < min_size or h_ < min_size:
+            min_size = min(aw, ah) * 0.055
+            sub = lum_a[y0:y1, x0:x1]
+            # una regione "ancora mista" (es. una piccola macchia di colore
+            # isolata su sfondo scuro) ha varianza interna alta anche dopo il
+            # blur: in questo caso conviene continuare a tagliare oltre la
+            # profondita' nominale, altrimenti quella macchia viene diluita
+            # nella media della cella e sparisce (diventa nera/grigia invece
+            # del suo vero colore). hard_cap evita ricorsioni infinite.
+            still_mixed = sub.size > 0 and sub.std() > 22.0
+            hard_cap = max_depth + 4
+            if (depth >= max_depth and not still_mixed) or depth >= hard_cap or w_ < min_size or h_ < min_size:
                 leaves_a.append((x0, y0, x1, y1))
                 return
             axis, pos = best_split(x0, y0, x1, y1)
@@ -1513,6 +1549,8 @@ def glitch_rothko(img, bande=0.4, sfumatura=0.5, grana=0.4):
         cuts = []
         grad_work = grad.copy()
         for _ in range(n_bands - 1):
+            if grad_work.size == 0:
+                break
             idx = int(np.argmax(grad_work))
             if grad_work[idx] <= 0:
                 break
@@ -1529,6 +1567,8 @@ def glitch_rothko(img, bande=0.4, sfumatura=0.5, grana=0.4):
                 continue
             margin = max(1, (y1 - y0) // 6)
             core = rgb[y0 + margin:max(y0 + margin + 1, y1 - margin), :]
+            if core.shape[0] == 0:
+                core = rgb[y0:y1, :]   # banda troppo piccola per il margine: uso tutta la banda
             color = core.reshape(-1, 3).mean(axis=0)
             field[y0:y1, :] = color
 
@@ -2269,7 +2309,7 @@ if uploaded_file is not None:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         @_fragment
-        def _render_variant_explorer(entry, img, ts):
+        def _render_variant_explorer(entry, img, ts, keep_transparency, original_alpha):
             """Genera N varianti dello stesso effetto con parametri diversi,
             campionati casualmente entro i range degli slider. Utile per
             esplorare velocemente lo spazio dei parametri di un effetto senza
@@ -2295,6 +2335,12 @@ if uploaded_file is not None:
                 # la stessa sequenza di combinazioni.
                 seed_used = seed_input if seed_input else str(random.randint(100000, 999999))
                 rng = random.Random(seed_used)
+                # se la funzione supporta 'variation_seed' (es. Mondrian), lo
+                # usiamo per dare ad ogni variante anche una composizione
+                # geometrica diversa, non solo colori/profondita' diversi —
+                # altrimenti su foto con poche zone di colore grandi molte
+                # varianti finiscono quasi indistinguibili fra loro.
+                accepts_variation_seed = "variation_seed" in inspect.signature(fn).parameters
                 variants = []
                 with st.spinner(f"Generazione di {n_variants} varianti..."):
                     for _ in range(n_variants):
@@ -2303,7 +2349,19 @@ if uploaded_file is not None:
                             n_steps = max(1, round((smax - smin) / sstep))
                             rv = smin + rng.randint(0, n_steps) * sstep
                             rvals.append(round(min(smax, max(smin, rv)), 6))
-                        result_img = fn(img, *rvals)
+                        if accepts_variation_seed:
+                            result_img = fn(img, *rvals, variation_seed=rng.randint(0, 2**31 - 1))
+                        else:
+                            result_img = fn(img, *rvals)
+                        # stessa logica di reinserimento alpha usata dal rendering
+                        # normale — prima mancava qui, e i PNG trasparenti
+                        # perdevano la trasparenza nelle varianti generate.
+                        if keep_transparency and original_alpha is not None:
+                            result_img = result_img.convert("RGBA")
+                            alpha_to_apply = original_alpha
+                            if result_img.size != alpha_to_apply.size:
+                                alpha_to_apply = alpha_to_apply.resize(result_img.size)
+                            result_img.putalpha(alpha_to_apply)
                         variants.append({
                             "vals": rvals,
                             "preview": img_to_preview_bytes(result_img, max_dim=500),
@@ -2360,7 +2418,7 @@ if uploaded_file is not None:
                        "all'ultima immagine generata. I download salvano l'ultimo frame generato.")
             st.markdown("---")
             live_entry = [e for e in EFFECTS if e[0] == live_effect_key][0]
-            _render_variant_explorer(live_entry, img, ts)
+            _render_variant_explorer(live_entry, img, ts, keep_transparency, original_alpha)
         else:
             if st.button("✨ Genera tutti gli effetti"):
                 should_process = True
