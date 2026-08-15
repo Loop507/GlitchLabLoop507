@@ -4,7 +4,6 @@ import numpy as np
 import io
 import zipfile
 import random
-import colorsys
 import inspect
 from datetime import datetime
 try:
@@ -1286,29 +1285,28 @@ def _sobel(gray):
 
 
 def glitch_mondrian(img, complessita=0.55, spessore=0.5, vivacita=0.6, variation_seed=None):
-    """Mondrian / De Stijl: partizione ricorsiva content-aware (taglia dove la
-    variazione locale e' massima). La ricerca dei tagli avviene su una copia
-    ridotta e sfocata dell'immagine (elimina il rumore/texture ad alta
-    frequenza che altrimenti genererebbe tagli casuali non legati alla foto
-    reale), poi le coordinate vengono riscalate sull'immagine a piena
-    risoluzione per il rendering finale (colore medio reale, linee nitide).
-    Ogni cella viene letta in HSV: se e' chiara/desaturata resta bianca,
-    altrimenti forzata al primario De Stijl piu' vicino per tonalita'
-    (rosso/giallo/blu) o nero se molto scura.
+    """Mondrian / De Stijl 'puro': la STRUTTURA della griglia (dove tagliare)
+    e' guidata dalla foto — partizione ricorsiva content-aware su una copia
+    ridotta e sfocata, che elimina il rumore ad alta frequenza e produce
+    composizioni diverse a seconda della foto caricata. Il COLORE di ogni
+    cella pero' non deriva mai dalla foto: viene assegnato dalla palette
+    classica De Stijl (bianco predominante, blocchi rosso/giallo/blu, rari
+    accenti neri) con probabilita' pesate, come in un vero Mondrian — non un
+    tentativo di 'tradurre' i colori reali della foto.
 
     complessita     : 0-1, profondita' massima di ricorsione (piu' celle)
     spessore        : 0-1, spessore delle linee nere
-    vivacita        : 0-1, quanto facilmente una cella diventa colorata anziche' bianca
+    vivacita        : 0-1, quanta parte della composizione resta bianca (basso)
+        o si riempie di rosso/giallo/blu (alto)
     variation_seed  : opzionale. Se None (default, uso normale) la scelta del
-        taglio e' sempre quella content-aware piu' forte, deterministica. Se
-        specificato (usato dal generatore di varianti) sceglie fra i tagli
-        migliori con probabilita' pesata sulla loro forza: stessa foto, stessi
-        parametri, ma composizioni geometriche diverse fra loro — utile per
-        avere varianti visivamente distinte anziche' quasi identiche.
+        taglio e la palette sono deterministiche per la stessa foto/parametri.
+        Se specificato (usato dal generatore di varianti) sceglie fra i tagli
+        migliori con probabilita' pesata sulla loro forza, e usa un'assegnazione
+        colore diversa — cosi' ogni variante ha sia composizione che palette
+        genuinamente diverse, non solo lievi sfumature.
     """
     try:
-        rgb_full = np.array(img.convert("RGB"), dtype=np.float32)
-        h, w = rgb_full.shape[:2]
+        w, h = img.size
 
         # analisi su versione ridotta + sfocata: elimina il rumore fotografico
         # che altrimenti farebbe scegliere tagli a caso pixel-per-pixel
@@ -1327,30 +1325,62 @@ def glitch_mondrian(img, complessita=0.55, spessore=0.5, vivacita=0.6, variation
         YELLOW = np.array([232, 190, 20])
         BLUE = np.array([25, 55, 150])
         BLACK = np.array([18, 18, 18])
-        HUES = [(0.0, RED), (0.14, YELLOW), (0.62, BLUE)]
-        # NOTA: la classificazione "bianco" richiede desaturazione (pallido),
-        # non basta essere luminoso — altrimenti colori vividi ma chiari come
-        # un cielo blu sereno (alta luminosita', saturazione media-alta)
-        # venivano scambiati per bianco e il blu spariva quasi sempre.
 
-        white_s_thr = 0.42 - 0.30 * vivacita
+        # palette dei colori assegnati per probabilita', NON dal contenuto
+        # della foto: vivacita' bassa -> per lo piu' bianco (De Stijl classico,
+        # pochi accenti colorati); vivacita' alta -> composizione piu' densa
+        # di rosso/giallo/blu. Rosso/giallo/blu hanno sempre la STESSA
+        # probabilita' fra loro, cosi' nessuno dei tre e' strutturalmente
+        # sfavorito.
+        p_white = max(0.15, 0.75 - 0.55 * vivacita)
+        p_black = 0.08
+        p_each_color = max(0.0, (1.0 - p_white - p_black) / 3.0)
+
+        # seed per l'assegnazione colore: se non specificato un variation_seed
+        # (uso normale), lo derivo dai parametri stessi -> stessa foto e stessi
+        # parametri producono sempre la stessa identica composizione colore,
+        # deterministica. Con un variation_seed esplicito (varianti) i colori
+        # cambiano assieme alla struttura.
+        if variation_seed is not None:
+            color_seed = variation_seed
+        else:
+            color_seed = hash((round(complessita, 4), round(spessore, 4),
+                                round(vivacita, 4), w, h)) & 0xFFFFFFFF
+        color_rng = random.Random(color_seed)
+
+        def pick_color():
+            r = color_rng.random()
+            if r < p_white:
+                return WHITE
+            r -= p_white
+            if r < p_black:
+                return BLACK
+            r -= p_black
+            if r < p_each_color:
+                return RED
+            r -= p_each_color
+            if r < p_each_color:
+                return YELLOW
+            return BLUE
 
         variation_rng = random.Random(variation_seed) if variation_seed is not None else None
 
         cuts_a = []   # tagli in coordinate dell'immagine di analisi (ridotta)
         leaves_a = []  # rettangoli foglia in coordinate di analisi
 
-        def best_split(x0, y0, x1, y1):
+        def best_split(x0, y0, x1, y1, parent_axis=None):
             sub = lum_a[y0:y1, x0:x1]
             sh, sw = sub.shape
             candidates = []  # (axis, pos, strength)
+            margin_w = max(5, round(sw * 0.10))
+            margin_h = max(5, round(sh * 0.10))
             if sw > 10:
                 col_mean = sub.mean(axis=0)
                 grad = np.abs(np.diff(col_mean))
                 if grad.size > 0:
                     k = min(3, grad.size)
                     for idx in np.argpartition(grad, -k)[-k:]:
-                        pos = x0 + max(5, min(sw - 5, int(idx) + 1))
+                        pos = x0 + max(margin_w, min(sw - margin_w, int(idx) + 1))
                         candidates.append(("v", pos, float(grad[idx])))
             if sh > 10:
                 row_mean = sub.mean(axis=1)
@@ -1358,10 +1388,18 @@ def glitch_mondrian(img, complessita=0.55, spessore=0.5, vivacita=0.6, variation
                 if gradr.size > 0:
                     k = min(3, gradr.size)
                     for idx in np.argpartition(gradr, -k)[-k:]:
-                        pos = y0 + max(5, min(sh - 5, int(idx) + 1))
+                        pos = y0 + max(margin_h, min(sh - margin_h, int(idx) + 1))
                         candidates.append(("h", pos, float(gradr[idx])))
             if not candidates:
                 return ("v", x0 + sw // 2) if sw >= sh else ("h", y0 + sh // 2)
+            # penalita' se il taglio e' nella STESSA direzione del genitore:
+            # senza questo, la ricorsione tende a tagliare sempre nello stesso
+            # verso (es. solo orizzontale) producendo tante strisce sottili
+            # impilate invece di una vera griglia di rettangoli come nel
+            # Mondrian classico. La penalita' scoraggia ma non vieta — se una
+            # direzione e' nettamente piu' forte vince comunque.
+            if parent_axis is not None:
+                candidates = [(a, p, s * (0.5 if a == parent_axis else 1.0)) for a, p, s in candidates]
             if variation_rng is None:
                 axis, pos, _ = max(candidates, key=lambda c: c[2])
                 return axis, pos
@@ -1377,47 +1415,26 @@ def glitch_mondrian(img, complessita=0.55, spessore=0.5, vivacita=0.6, variation
                     return c[0], c[1]
             return candidates[-1][0], candidates[-1][1]
 
-        def recurse(x0, y0, x1, y1, depth):
+        def recurse(x0, y0, x1, y1, depth, parent_axis=None):
             w_, h_ = x1 - x0, y1 - y0
-            min_size = min(aw, ah) * 0.055
-            sub = lum_a[y0:y1, x0:x1]
-            # una regione "ancora mista" (es. una piccola macchia di colore
-            # isolata su sfondo scuro) ha varianza interna alta anche dopo il
-            # blur: in questo caso conviene continuare a tagliare oltre la
-            # profondita' nominale, altrimenti quella macchia viene diluita
-            # nella media della cella e sparisce (diventa nera/grigia invece
-            # del suo vero colore). hard_cap evita ricorsioni infinite.
-            still_mixed = sub.size > 0 and sub.std() > 22.0
-            hard_cap = max_depth + 4
-            if (depth >= max_depth and not still_mixed) or depth >= hard_cap or w_ < min_size or h_ < min_size:
+            min_size = min(aw, ah) * 0.09
+            if depth >= max_depth or w_ < min_size or h_ < min_size:
                 leaves_a.append((x0, y0, x1, y1))
                 return
-            axis, pos = best_split(x0, y0, x1, y1)
+            axis, pos = best_split(x0, y0, x1, y1, parent_axis)
             if axis == "v":
                 cuts_a.append((pos, y0, pos, y1))
-                recurse(x0, y0, pos, y1, depth + 1)
-                recurse(pos, y0, x1, y1, depth + 1)
+                recurse(x0, y0, pos, y1, depth + 1, axis)
+                recurse(pos, y0, x1, y1, depth + 1, axis)
             else:
                 cuts_a.append((x0, pos, x1, pos))
-                recurse(x0, y0, x1, pos, depth + 1)
-                recurse(x0, pos, x1, y1, depth + 1)
+                recurse(x0, y0, x1, pos, depth + 1, axis)
+                recurse(x0, pos, x1, y1, depth + 1, axis)
 
         recurse(0, 0, aw, ah, 0)
 
         # riscalo tagli e foglie sulla risoluzione piena
         sx, sy = w / aw, h / ah
-
-        def cell_color(x0, y0, x1, y1):
-            r, g, b = (rgb_full[y0:y1, x0:x1].reshape(-1, 3).mean(axis=0) / 255.0)
-            hh, ss, vv = colorsys.rgb_to_hsv(r, g, b)
-            if vv < 0.22:
-                return BLACK
-            is_pale = ss < white_s_thr
-            is_blown_highlight = vv > 0.97 and ss < (white_s_thr + 0.15)
-            if is_pale or is_blown_highlight:
-                return WHITE
-            dists = [min(abs(hh - hu), 1 - abs(hh - hu)) for hu, _ in HUES]
-            return HUES[int(np.argmin(dists))][1]
 
         out = np.full((h, w, 3), 250, dtype=np.float32)
         for (x0, y0, x1, y1) in leaves_a:
@@ -1426,7 +1443,7 @@ def glitch_mondrian(img, complessita=0.55, spessore=0.5, vivacita=0.6, variation
             X0, Y0 = min(X0, w - 1), min(Y0, h - 1)      # mai oltre l'ultimo pixel valido
             X1, Y1 = max(X1, X0 + 1), max(Y1, Y0 + 1)    # cella sempre non-vuota
             X1, Y1 = min(X1, w), min(Y1, h)               # mai oltre il bordo immagine
-            out[Y0:Y1, X0:X1] = cell_color(X0, Y0, X1, Y1)
+            out[Y0:Y1, X0:X1] = pick_color()
 
         result = out.astype(np.uint8).copy()
         for (x0, y0, x1, y1) in cuts_a:
