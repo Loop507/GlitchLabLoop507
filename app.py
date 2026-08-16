@@ -1536,20 +1536,30 @@ def glitch_van_gogh(img, turbolenza=0.6, pennellata=0.5, saturazione=0.5):
         st.error(f"Van Gogh Swirl: {e}"); return img
 
 
-def glitch_rothko(img, bande=0.4, sfumatura=0.5, grana=0.4):
-    """Color field alla Rothko: individua i confini di banda orizzontale nei
-    punti di massima variazione di luminanza (non griglia fissa), riempie
-    ogni banda col colore medio reale, feathering gaussiano ai bordi
-    (bleed morbido tipico), grana di tela sovrapposta. L'elaborazione
-    pesante (blur, feathering, grana) avviene su una copia ridotta
-    dell'immagine e viene poi riportata alla risoluzione originale: sulle
-    foto vere (alcuni megapixel) questo taglia i tempi da decine di secondi
-    a meno di un secondo, senza perdita percepibile (le bande Rothko sono
-    comunque campi di colore piatto, non serve dettaglio pixel-per-pixel).
+def glitch_rothko(img, bande=0.4, sfumatura=0.5, grana=0.4, variation_seed=None):
+    """Color field alla Rothko: la STRUTTURA (dove cadono i confini fra le
+    bande orizzontali) e' guidata dalla foto — individuata nei punti di
+    massima variazione di luminanza, non su una griglia fissa, cosi' foto
+    diverse producono partiture di bande diverse. Il COLORE di ogni banda
+    pero' non deriva mai dalla foto (niente media dei pixel reali): viene
+    scelto da una palette curata di toni densi e vellutati ispirati alle
+    serie Seagram/Multiform di Rothko — come in Mondrian, e' la palette a
+    decidere le sfumature, non il contenuto dell'immagine. Feathering
+    gaussiano ai bordi (bleed morbido tipico) e grana di tela sovrapposta
+    completano l'effetto. L'elaborazione pesante (blur, feathering, grana)
+    avviene su una copia ridotta dell'immagine e viene poi riportata alla
+    risoluzione originale: sulle foto vere (alcuni megapixel) questo taglia
+    i tempi da decine di secondi a meno di un secondo, senza perdita
+    percepibile (le bande Rothko sono comunque campi di colore piatto, non
+    serve dettaglio pixel-per-pixel).
 
-    bande     : 0-1, numero di bande di colore (2-5)
-    sfumatura : 0-1, quanto le bande sfumano l'una nell'altra
-    grana     : 0-1, intensita' della grana di tela
+    bande          : 0-1, numero di bande di colore (2-5)
+    sfumatura      : 0-1, quanto le bande sfumano l'una nell'altra
+    grana          : 0-1, intensita' della grana di tela
+    variation_seed : opzionale. Se None (default) l'assegnazione colore e'
+        deterministica per la stessa foto/parametri. Se specificato (usato
+        dal generatore di varianti) rimescola la scelta della palette per
+        banda, cosi' ogni variante ha una combinazione di colori diversa.
     """
     try:
         orig_w, orig_h = img.size
@@ -1577,17 +1587,50 @@ def glitch_rothko(img, bande=0.4, sfumatura=0.5, grana=0.4):
         cuts = sorted(cuts)
         bounds = [0] + cuts + [h]
 
+        # Palette Rothko: toni densi e vellutati ispirati alle serie
+        # Seagram/Multiform — assegnata per PROBABILITA', mai letta dai
+        # pixel della foto (quella decide solo dove cadono i confini,
+        # sopra). Stessa logica di Mondrian: e' la palette a scegliere le
+        # sfumature, non il contenuto dell'immagine.
+        ROTHKO_PALETTE = [
+            (176, 34, 28),    # rosso cadmio
+            (94, 24, 24),     # bordeaux profondo
+            (198, 93, 30),    # arancio bruciato
+            (200, 148, 40),   # ocra dorata
+            (210, 170, 90),   # giallo caldo/sabbia
+            (25, 22, 20),     # nero/carbone
+            (20, 35, 70),     # blu notte
+            (70, 30, 60),     # viola prugna
+            (176, 100, 90),   # rosa sbiadito
+            (110, 20, 35),    # bordeaux acceso
+        ]
+
+        # seed per l'assegnazione colore: se non specificato un
+        # variation_seed (uso normale), lo derivo dai parametri stessi ->
+        # stessa foto e stessi parametri producono sempre la stessa
+        # identica combinazione di colori, deterministica.
+        if variation_seed is not None:
+            color_seed = variation_seed
+        else:
+            color_seed = hash((round(bande, 4), round(sfumatura, 4),
+                                round(grana, 4), w, h)) & 0xFFFFFFFF
+        color_rng = random.Random(color_seed)
+
+        def pick_band_color(prev_color):
+            # evita (quando possibile) che due bande adiacenti prendano
+            # esattamente lo stesso colore
+            choices = [c for c in ROTHKO_PALETTE if c != prev_color] or ROTHKO_PALETTE
+            return color_rng.choice(choices)
+
         field = np.zeros_like(rgb)
+        prev_color = None
         for i in range(len(bounds) - 1):
             y0, y1 = bounds[i], bounds[i + 1]
             if y1 <= y0:
                 continue
-            margin = max(1, (y1 - y0) // 6)
-            core = rgb[y0 + margin:max(y0 + margin + 1, y1 - margin), :]
-            if core.shape[0] == 0:
-                core = rgb[y0:y1, :]   # banda troppo piccola per il margine: uso tutta la banda
-            color = core.reshape(-1, 3).mean(axis=0)
-            field[y0:y1, :] = color
+            color = pick_band_color(prev_color)
+            prev_color = color
+            field[y0:y1, :] = np.array(color, dtype=np.float32)
 
         feather_r = int(2 + sfumatura * (h * 0.06))
         soft = np.stack([_box_blur(field[..., c], feather_r) for c in range(3)], axis=-1)
