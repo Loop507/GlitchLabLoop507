@@ -1637,7 +1637,11 @@ def glitch_rothko(img, bande=0.4, sfumatura=0.5, grana=0.4, variation_seed=None)
         mix = 0.25 + sfumatura * 0.6
         out = field * (1 - mix) + soft * mix
 
-        rng = np.random.default_rng(7)
+        # seed grana: legato a variation_seed quando presente, cosi' anche
+        # la texture di tela cambia fra una variante e l'altra (prima era
+        # fisso a 7 e restava identico su tutte le varianti generate).
+        grain_seed = variation_seed if variation_seed is not None else 7
+        rng = np.random.default_rng(grain_seed)
         noise = rng.normal(0, 1, (h, w))
         noise = _box_blur(noise, 1)
         noise = (noise - noise.mean()) / (noise.std() + 1e-6)
